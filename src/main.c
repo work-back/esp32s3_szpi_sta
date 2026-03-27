@@ -72,7 +72,7 @@ static int connect_to_wifi(void)
 
 int main(void)
 {
-	k_sleep(K_SECONDS(5));
+	k_sleep(K_SECONDS(3));
 
 	net_mgmt_init_event_callback(&cb, wifi_event_handler, NET_EVENT_WIFI_MASK);
 	net_mgmt_add_event_callback(&cb);
@@ -81,6 +81,10 @@ int main(void)
 	sta_iface = net_if_get_wifi_sta();
 
 	connect_to_wifi();
+
+    while(1) {
+        k_sleep(K_SECONDS(5));
+    }
 
 	return 0;
 }

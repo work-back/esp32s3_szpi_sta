@@ -1,0 +1,14 @@
+/ {
+	chosen {
+		zephyr,console = &usb_serial;
+		zephyr,shell-uart = &usb_serial;
+	};
+};
+
+&flash0 {
+    reg = <0x0 DT_SIZE_M(16)>;
+};
+
+&usb_serial {
+	status = "okay";
+};
