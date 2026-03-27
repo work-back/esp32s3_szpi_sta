@@ -1,0 +1,30 @@
+# Copyright 2025 NXP
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "Network Wi-Fi apsta_mode application"
+
+config WIFI_SAMPLE_SSID
+	string "SSID of the target AP"
+	help
+	  SSID of the access point to connect to in station mode.
+	  For example: "TARGET-AP"
+
+config WIFI_SAMPLE_PSK
+	string "Pre-shared key for target AP"
+	help
+	  WPA2 password used to connect to the target AP.
+	  For example: "PSK"
+
+config WIFI_SAMPLE_DHCPV4_START
+	bool "Start DHCPv4 server in application layer."
+	default y
+	help
+	  Enable this option to start the DHCPv4 server from the application layer,
+	  typically before the Soft AP is initialized.
+
+	  When disabled, the DHCPv4 server startup timing is determined by the vendor's
+	  implementation. In some cases, the server may be started after the AP is up,
+	  using the vendor's default IP address, gateway, subnet mask.
+
+
+source "Kconfig.zephyr"
