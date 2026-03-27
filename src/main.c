@@ -8,6 +8,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/net/wifi_mgmt.h>
 
+#include "wscli.h"
+
 LOG_MODULE_REGISTER(MAIN);
 
 #define MACSTR "%02X:%02X:%02X:%02X:%02X:%02X"
@@ -81,6 +83,10 @@ int main(void)
 	sta_iface = net_if_get_wifi_sta();
 
 	connect_to_wifi();
+
+	k_sleep(K_SECONDS(15));
+
+	run_wscli();
 
     while(1) {
         k_sleep(K_SECONDS(5));
