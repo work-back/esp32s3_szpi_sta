@@ -134,7 +134,7 @@ static void recv_data_bsd_api(int sock, uint8_t *buf, size_t buf_len, const char
 
 static int recv_with_poll(int sock, uint8_t *buf, size_t buf_len, const char *proto)
 {
-	struct zsock_pollfd fds = {
+	struct pollfd fds = {
 		.fd = sock,
 		.events = ZSOCK_POLLIN,
 	};
