@@ -21,6 +21,7 @@ LOG_MODULE_REGISTER(WSCLI, LOG_LEVEL_DBG);
 #include <zephyr/random/random.h>
 #include <zephyr/shell/shell.h>
 
+#include "wscli.h"
 
 #define SERVER_PORT 9001
 
@@ -30,10 +31,6 @@ LOG_MODULE_REGISTER(WSCLI, LOG_LEVEL_DBG);
 #else
 #define SERVER_ADDR4 "192.168.66.155"
 #endif
-
-#define MAX_RECV_BUF_LEN (1024)
-
-static uint8_t recv_buf_ipv4[MAX_RECV_BUF_LEN];
 
 /* We need to allocate bigger buffer for the websocket data we receive so that
  * the websocket header fits into it.
@@ -104,12 +101,12 @@ static ssize_t sendall_with_ws_api(int sock, const void *buf, size_t len)
 				  true, true, SYS_FOREVER_MS);
 }
 
-static ssize_t sendall_with_bsd_api(int sock, const void *buf, size_t len)
+ssize_t wscli_send(int sock, const void *buf, size_t len)
 {
 	return send(sock, buf, len, 0);
 }
 
-static void recv_data_bsd_api(int sock, uint8_t *buf, size_t buf_len, const char *proto)
+int wscli_recv(int sock, uint8_t *buf, size_t buf_len)
 {
 	int ret, read_pos;
 
@@ -123,78 +120,15 @@ static void recv_data_bsd_api(int sock, uint8_t *buf, size_t buf_len, const char
 				continue;
 			}
 
-			LOG_DBG("%s connection closed while waiting (%d/%d)", proto, ret, errno);
+			LOG_DBG("connection closed while waiting (%d/%d)", ret, errno);
 			break;
 		}
 
 		read_pos += ret;
 		break;
 	}
-}
 
-static int recv_with_poll(int sock, uint8_t *buf, size_t buf_len, const char *proto)
-{
-	struct pollfd fds = {
-		.fd = sock,
-		.events = ZSOCK_POLLIN,
-	};
-	int ret;
-
-	ret = poll(&fds, 1, 30 * 1000);
-	if (ret < 0) {
-		return ret;
-	}
-
-	if (ret == 0) {
-		LOG_DBG("zsock_poll timeout!");
-		return -EAGAIN;
-	}
-
-	if (fds.revents & ZSOCK_POLLNVAL) {
-		return -EBADF;
-	}
-
-	if (fds.revents & ZSOCK_POLLERR) {
-		return -EIO;
-	}
-
-	if (fds.revents & ZSOCK_POLLIN) {
-		recv_data_bsd_api(sock, buf, buf_len, proto);
-	}
-
-	return 0;
-	
-}
-
-static bool send_and_wait_msg(int sock, const char *proto, uint8_t *buf, size_t buf_len)
-{
-	int ret;
-
-	if (sock < 0) {
-		return true;
-	}
-
-	ret = snprintf(buf, buf_len, "%s", "hello SRV");;
-
-	ret = sendall_with_bsd_api(sock, buf, ret);
-	if (ret <= 0) {
-		if (ret < 0) {
-			LOG_ERR("%s failed to send data using %s (%d)", proto, "ws API", ret);
-		} else {
-			LOG_DBG("%s connection closed", proto);
-		}
-
-		return false;
-	} else {
-		LOG_DBG("%s sent %d bytes", proto, ret);
-	}
-
-
-	recv_with_poll(sock, buf, buf_len, proto);
-
-	LOG_DBG("%s receive [%s]", proto, buf);
-
-	return true;
+    return read_pos;
 }
 
 int g_sock4 = -1;
@@ -260,15 +194,6 @@ return 0;
 
 int wscli_fini(void)
 {
-	while (1) {
-		if (g_websock4 >= 0 &&
-		    !send_and_wait_msg(g_websock4, "IPv4", recv_buf_ipv4, sizeof(recv_buf_ipv4))) {
-			break;
-		}
-
-		k_sleep(K_MSEC(250));
-	}
-
 	if (g_websock4 >= 0) {
 		close(g_websock4);
 		g_websock4 = -1;
@@ -280,4 +205,9 @@ int wscli_fini(void)
 	}
 
 	return 0;
+}
+
+int wscli_getsock(void)
+{
+    return g_websock4;
 }
