@@ -130,6 +130,40 @@ static void recv_data_bsd_api(int sock, uint8_t *buf, size_t buf_len, const char
 	}
 }
 
+static int recv_with_poll(int sock, uint8_t *buf, size_t buf_len, const char *proto)
+{
+	struct zsock_pollfd fds = {
+		.fd = sock,
+		.events = ZSOCK_POLLIN,
+	};
+	int ret;
+
+	ret = zsock_poll(&fds, 1, 30 * 1000);
+	if (ret < 0) {
+		return ret;
+	}
+
+	if (ret == 0) {
+		LOG_DBG("zsock_poll timeout!");
+		return -EAGAIN;
+	}
+
+	if (fds.revents & ZSOCK_POLLNVAL) {
+		return -EBADF;
+	}
+
+	if (fds.revents & ZSOCK_POLLERR) {
+		return -EIO;
+	}
+
+	if (fds.revents & ZSOCK_POLLIN) {
+		recv_data_bsd_api(sock, buf, buf_len, proto);
+	}
+
+	return 0;
+	
+}
+
 static bool send_and_wait_msg(int sock, const char *proto, uint8_t *buf, size_t buf_len)
 {
 	int ret;
@@ -154,7 +188,7 @@ static bool send_and_wait_msg(int sock, const char *proto, uint8_t *buf, size_t 
 	}
 
 
-	recv_data_bsd_api(sock, buf, buf_len, proto);
+	recv_with_poll(sock, buf, buf_len, proto);
 
 	LOG_DBG("%s receive [%s]", proto, buf);
 
