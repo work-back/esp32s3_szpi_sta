@@ -10,6 +10,8 @@ LOG_MODULE_REGISTER(net_websocket_client_sample, LOG_LEVEL_DBG);
 #include <zephyr/posix/sys/socket.h>
 #include <zephyr/posix/arpa/inet.h>
 #include <zephyr/posix/unistd.h>
+#include <zephyr/posix/sys/eventfd.h>
+#include <zephyr/posix/poll.h>
 
 #include <zephyr/misc/lorem_ipsum.h>
 #include <zephyr/net/net_ip.h>
@@ -138,7 +140,7 @@ static int recv_with_poll(int sock, uint8_t *buf, size_t buf_len, const char *pr
 	};
 	int ret;
 
-	ret = zsock_poll(&fds, 1, 30 * 1000);
+	ret = poll(&fds, 1, 30 * 1000);
 	if (ret < 0) {
 		return ret;
 	}
