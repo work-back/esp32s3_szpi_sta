@@ -228,21 +228,27 @@ int run_wscli(void)
 
 
 	if (sock4 >= 0 && IS_ENABLED(CONFIG_NET_IPV4)) {
+		char buf[128];
 		struct websocket_request req;
 
 		memset(&req, 0, sizeof(req));
 
-		req.host = SERVER_ADDR4;
+		snprintk(buf, sizeof(buf), "%s:%u", SERVER_ADDR4, SERVER_PORT);
+
+		req.host = buf;
 		req.url = "/";
 		req.optional_headers = extra_headers;
 		req.cb = connect_cb;
 		req.tmp_buf = temp_recv_buf_ipv4;
 		req.tmp_buf_len = sizeof(temp_recv_buf_ipv4);
 
+		LOG_INF("req.host : %s", req.host);
+		LOG_INF("req.url : %s", req.url);
+		LOG_INF("req.tmp_buf_len : %d", req.tmp_buf_len);
+
 		websock4 = websocket_connect(sock4, &req, timeout, "IPv4");
 		if (websock4 < 0) {
-			LOG_ERR("Cannot connect to %s:%d", SERVER_ADDR4,
-				SERVER_PORT);
+			LOG_ERR("Cannot connect to %s:%d, ret:%d", SERVER_ADDR4, SERVER_PORT, websock4);
 			close(sock4);
 		}
 	}

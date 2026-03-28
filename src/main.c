@@ -28,6 +28,10 @@ static struct net_mgmt_event_callback cb;
 BUILD_ASSERT(sizeof(CONFIG_WIFI_SAMPLE_SSID) > 1,
 	     "CONFIG_WIFI_SAMPLE_SSID is empty. Please set it in conf file.");
 
+/* 1. 定义 WiFi 连接成功的信号量 */
+/* 初始值为 0，表示初始状态为“未连接”，需要等待事件发生 */
+K_SEM_DEFINE(wifi_connected_sem, 0, 1);
+
 
 static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event,
 			       struct net_if *iface)
@@ -35,6 +39,7 @@ static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt
 	switch (mgmt_event) {
 	case NET_EVENT_WIFI_CONNECT_RESULT: {
 		LOG_INF("Connected to %s", CONFIG_WIFI_SAMPLE_SSID);
+		k_sem_give(&wifi_connected_sem);
 		break;
 	}
 	case NET_EVENT_WIFI_DISCONNECT_RESULT: {
@@ -82,9 +87,20 @@ int main(void)
 
 	sta_iface = net_if_get_wifi_sta();
 
-	connect_to_wifi();
+	if (connect_to_wifi() != 0) {
+		LOG_ERR("Unable to Connect to wifi!");
+		k_sleep(K_SECONDS(5));
+	}
 
-	k_sleep(K_SECONDS(15));
+	/* K_FOREVER 表示一直等待，也可以设置超时时间如 K_SECONDS(300) */
+	int wait_ret = k_sem_take(&wifi_connected_sem, K_SECONDS(300));
+	if (wait_ret == 0) {
+		LOG_INF("WiFi connected, starting WSCLI...");
+		run_wscli();
+	} else {
+		LOG_ERR("WiFi connection wait timed out or interrupted.");
+		k_sleep(K_SECONDS(5));
+	}
 
 	run_wscli();
 
