@@ -29,11 +29,7 @@ LOG_MODULE_REGISTER(net_websocket_client_sample, LOG_LEVEL_DBG);
 #define SERVER_ADDR4 "192.168.66.155"
 #endif
 
-static const char lorem_ipsum[] = LOREM_IPSUM;
-
-#define MAX_RECV_BUF_LEN (sizeof(lorem_ipsum) - 1)
-
-const int ipsum_len = MAX_RECV_BUF_LEN;
+#define MAX_RECV_BUF_LEN (1024)
 
 static uint8_t recv_buf_ipv4[MAX_RECV_BUF_LEN];
 
@@ -100,70 +96,41 @@ static int connect_cb(int sock, struct http_request *req, void *user_data)
 	return 0;
 }
 
-static size_t how_much_to_send(size_t max_len)
-{
-	size_t amount;
-
-	do {
-		amount = sys_rand32_get() % max_len;
-	} while (amount == 0U);
-
-	return amount;
-}
-
 static ssize_t sendall_with_ws_api(int sock, const void *buf, size_t len)
 {
 	return websocket_send_msg(sock, buf, len, WEBSOCKET_OPCODE_DATA_TEXT,
 				  true, true, SYS_FOREVER_MS);
 }
 
-
-static void recv_data_wso_api(int sock, size_t amount, uint8_t *buf,
-			      size_t buf_len, const char *proto)
+static ssize_t sendall_with_bsd_api(int sock, const void *buf, size_t len)
 {
-	uint64_t remaining = ULLONG_MAX;
-	int total_read;
-	uint32_t message_type;
+	return send(sock, buf, len, 0);
+}
+
+static void recv_data_bsd_api(int sock, uint8_t *buf, size_t buf_len, const char *proto)
+{
 	int ret, read_pos;
 
 	read_pos = 0;
-	total_read = 0;
 
-	while (remaining > 0) {
-		ret = websocket_recv_msg(sock, buf + read_pos,
-					 buf_len - read_pos,
-					 &message_type,
-					 &remaining,
-					 0);
-		if (ret < 0) {
-			if (ret == -EAGAIN) {
+	while (1) {
+		ret = recv(sock, buf + read_pos, buf_len - read_pos, 0);
+		if (ret <= 0) {
+			if (errno == EAGAIN || errno == ETIMEDOUT) {
 				k_sleep(K_MSEC(50));
 				continue;
 			}
 
-			LOG_DBG("%s connection closed while "
-				"waiting (%d/%d)", proto, ret, errno);
+			LOG_DBG("%s connection closed while waiting (%d/%d)", proto, ret, errno);
 			break;
 		}
 
 		read_pos += ret;
-		total_read += ret;
-	}
-
-	if (remaining != 0 || total_read != amount ||
-	    /* Do not check the final \n at the end of the msg */
-	    memcmp(lorem_ipsum, buf, amount - 1) != 0) {
-		LOG_ERR("%s data recv failure %zd/%d bytes (remaining %" PRId64 ")",
-			proto, amount, total_read, remaining);
-		LOG_HEXDUMP_DBG(buf, total_read, "received ws buf");
-		LOG_HEXDUMP_DBG(lorem_ipsum, total_read, "sent ws buf");
-	} else {
-		LOG_DBG("%s recv %d bytes", proto, total_read);
+		break;
 	}
 }
 
-static bool send_and_wait_msg(int sock, size_t amount, const char *proto,
-			      uint8_t *buf, size_t buf_len)
+static bool send_and_wait_msg(int sock, const char *proto, uint8_t *buf, size_t buf_len)
 {
 	int ret;
 
@@ -171,22 +138,9 @@ static bool send_and_wait_msg(int sock, size_t amount, const char *proto,
 		return true;
 	}
 
-	/* Terminate the sent data with \n so that we can use the
-	 *      websocketd --port=9001 cat
-	 * command in server side.
-	 */
-	memcpy(buf, lorem_ipsum, amount);
-	buf[amount] = '\n';
+	ret = snprintf(buf, buf_len, "%s", "hello SRV");;
 
-	/* Send every 2nd message using dedicated websocket API and generic
-	 * BSD socket API. Real applications would not work like this but here
-	 * we want to test both APIs. We also need to send the \n so add it
-	 * here to amount variable.
-	 */
-
-	ret = sendall_with_ws_api(sock, buf, amount + 1);
-
-
+	ret = sendall_with_bsd_api(sock, buf, ret);
 	if (ret <= 0) {
 		if (ret < 0) {
 			LOG_ERR("%s failed to send data using %s (%d)", proto, "ws API", ret);
@@ -200,7 +154,9 @@ static bool send_and_wait_msg(int sock, size_t amount, const char *proto,
 	}
 
 
-	recv_data_wso_api(sock, amount + 1, buf, buf_len, proto);
+	recv_data_bsd_api(sock, buf, buf_len, proto);
+
+	LOG_DBG("%s receive [%s]", proto, buf);
 
 	return true;
 }
@@ -217,61 +173,53 @@ int run_wscli(void)
 	int websock4 = -1;
 	int32_t timeout = 3 * MSEC_PER_SEC;
 	struct sockaddr_in addr4;
-	size_t amount;
 	int ret;
 
-	if (IS_ENABLED(CONFIG_NET_IPV4)) {
-		(void)connect_socket(AF_INET, SERVER_ADDR4, SERVER_PORT,
-				     &sock4, (struct sockaddr *)&addr4,
-				     sizeof(addr4));
+	if (!IS_ENABLED(CONFIG_NET_IPV4)) {
+		LOG_ERR("Ipv4 is not enabled.");
+		return -1;
 	}
 
-
-	if (sock4 >= 0 && IS_ENABLED(CONFIG_NET_IPV4)) {
-		char buf[128];
-		struct websocket_request req;
-
-		memset(&req, 0, sizeof(req));
-
-		snprintk(buf, sizeof(buf), "%s:%u", SERVER_ADDR4, SERVER_PORT);
-
-		req.host = buf;
-		req.url = "/";
-		req.optional_headers = extra_headers;
-		req.cb = connect_cb;
-		req.tmp_buf = temp_recv_buf_ipv4;
-		req.tmp_buf_len = sizeof(temp_recv_buf_ipv4);
-
-		LOG_INF("req.host : %s", req.host);
-		LOG_INF("req.url : %s", req.url);
-		LOG_INF("req.tmp_buf_len : %d", req.tmp_buf_len);
-
-		websock4 = websocket_connect(sock4, &req, timeout, "IPv4");
-		if (websock4 < 0) {
-			LOG_ERR("Cannot connect to %s:%d, ret:%d", SERVER_ADDR4, SERVER_PORT, websock4);
-			close(sock4);
-		}
-	}
+	(void)connect_socket(AF_INET, SERVER_ADDR4, SERVER_PORT,
+				&sock4, (struct sockaddr *)&addr4,
+				sizeof(addr4));
 
 	if (sock4 < 0) {
-		LOG_ERR("Cannot create HTTP connection.");
-		k_sleep(K_FOREVER);
+		LOG_ERR("connect_socket failed.");
+		return -1;
 	}
 
 
+	char buf[128];
+	struct websocket_request req;
+
+	memset(&req, 0, sizeof(req));
+
+	snprintk(buf, sizeof(buf), "%s:%u", SERVER_ADDR4, SERVER_PORT);
+
+	req.host = buf;
+	req.url = "/";
+	req.optional_headers = extra_headers;
+	req.cb = connect_cb;
+	req.tmp_buf = temp_recv_buf_ipv4;
+	req.tmp_buf_len = sizeof(temp_recv_buf_ipv4);
+
+	LOG_INF("req.host : %s", req.host);
+	LOG_INF("req.url : %s", req.url);
+	LOG_INF("req.tmp_buf_len : %d", req.tmp_buf_len);
+
+	websock4 = websocket_connect(sock4, &req, timeout, "IPv4");
 	if (websock4 < 0) {
-		LOG_ERR("No IPv4 connectivity");
-		k_sleep(K_FOREVER);
+		LOG_ERR("Cannot connect to %s:%d, ret:%d", SERVER_ADDR4, SERVER_PORT, websock4);
+		close(sock4);
+		return -1;
 	}
 
 	LOG_INF("Websocket IPv4 %d", websock4);
 
 	while (1) {
-		amount = how_much_to_send(ipsum_len);
-
 		if (websock4 >= 0 &&
-		    !send_and_wait_msg(websock4, amount, "IPv4",
-				       recv_buf_ipv4, sizeof(recv_buf_ipv4))) {
+		    !send_and_wait_msg(websock4, "IPv4", recv_buf_ipv4, sizeof(recv_buf_ipv4))) {
 			break;
 		}
 
