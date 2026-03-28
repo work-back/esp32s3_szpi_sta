@@ -5,7 +5,7 @@
  */
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(net_websocket_client_sample, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(WSCLI, LOG_LEVEL_DBG);
 
 #include <zephyr/posix/sys/socket.h>
 #include <zephyr/posix/arpa/inet.h>
@@ -197,7 +197,10 @@ static bool send_and_wait_msg(int sock, const char *proto, uint8_t *buf, size_t 
 	return true;
 }
 
-int run_wscli(void)
+int g_sock4 = -1;
+int g_websock4 = -1;
+
+int wscli_init(void)
 {
 	/* Just an example how to set extra headers */
 	const char *extra_headers[] = {
@@ -205,8 +208,6 @@ int run_wscli(void)
 		NULL
 	};
 
-    int sock4 = -1;
-	int websock4 = -1;
 	int32_t timeout = 3 * MSEC_PER_SEC;
 	struct sockaddr_in addr4;
 	int ret;
@@ -217,10 +218,10 @@ int run_wscli(void)
 	}
 
 	(void)connect_socket(AF_INET, SERVER_ADDR4, SERVER_PORT,
-				&sock4, (struct sockaddr *)&addr4,
+				&g_sock4, (struct sockaddr *)&addr4,
 				sizeof(addr4));
 
-	if (sock4 < 0) {
+	if (g_sock4 < 0) {
 		LOG_ERR("connect_socket failed.");
 		return -1;
 	}
@@ -244,32 +245,39 @@ int run_wscli(void)
 	LOG_INF("req.url : %s", req.url);
 	LOG_INF("req.tmp_buf_len : %d", req.tmp_buf_len);
 
-	websock4 = websocket_connect(sock4, &req, timeout, "IPv4");
-	if (websock4 < 0) {
-		LOG_ERR("Cannot connect to %s:%d, ret:%d", SERVER_ADDR4, SERVER_PORT, websock4);
-		close(sock4);
+	g_websock4 = websocket_connect(g_sock4, &req, timeout, "IPv4");
+	if (g_websock4 < 0) {
+		LOG_ERR("Cannot connect to %s:%d, ret:%d", SERVER_ADDR4, SERVER_PORT, g_websock4);
+		close(g_sock4);
+		g_sock4 = -1;
 		return -1;
 	}
 
-	LOG_INF("Websocket IPv4 %d", websock4);
+	LOG_INF("Websocket IPv4 %d", g_websock4);
 
+return 0;
+}
+
+int wscli_fini(void)
+{
 	while (1) {
-		if (websock4 >= 0 &&
-		    !send_and_wait_msg(websock4, "IPv4", recv_buf_ipv4, sizeof(recv_buf_ipv4))) {
+		if (g_websock4 >= 0 &&
+		    !send_and_wait_msg(g_websock4, "IPv4", recv_buf_ipv4, sizeof(recv_buf_ipv4))) {
 			break;
 		}
 
 		k_sleep(K_MSEC(250));
 	}
 
-	if (websock4 >= 0) {
-		close(websock4);
+	if (g_websock4 >= 0) {
+		close(g_websock4);
+		g_websock4 = -1;
 	}
 
-    if (sock4 >= 0) {
-		close(sock4);
+    if (g_sock4 >= 0) {
+		close(g_sock4);
+		g_sock4 = -1;
 	}
 
-	k_sleep(K_FOREVER);
 	return 0;
 }
