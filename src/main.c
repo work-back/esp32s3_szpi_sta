@@ -15,40 +15,88 @@
 
 LOG_MODULE_REGISTER(MAIN, LOG_LEVEL_DBG);
 
+uint8_t recv_buf[MAX_RECV_BUF_LEN];
+uint8_t send_buf[MAX_RECV_BUF_LEN];
+
+static struct pollfd fds[2];
+
+static void timer_looper_thrd(void);
+static bool send_msg(int sock, uint8_t *buf, size_t buf_len);
+
+#if defined(CONFIG_NET_TC_THREAD_PREEMPTIVE)
+#define THREAD_PRIORITY K_PRIO_PREEMPT(8)
+#else
+#define THREAD_PRIORITY K_PRIO_COOP(CONFIG_NUM_COOP_PRIORITIES - 1)
+#endif
+
+#define STACK_SIZE 2048
+
+K_THREAD_DEFINE(timer_thread_id, STACK_SIZE,
+		timer_looper_thrd, NULL, NULL, NULL,
+		THREAD_PRIORITY,
+		IS_ENABLED(CONFIG_USERSPACE) ? K_USER : 0, -1);
+
+static void timer_looper_thrd(void)
+{
+    LOG_INF("timer_looper_thrd start ...");
+
+    while(1) {
+        k_sleep(K_SECONDS(1));
+
+        eventfd_write(fds[1].fd, 1);
+
+        printk("Sent signal to main thread\n");
+    }
+
+    return;
+}
+
 static int recv_with_poll(int sock, uint8_t *buf, size_t buf_len)
 {
-	struct pollfd fds = {
-		.fd = sock,
-		.events = ZSOCK_POLLIN,
-	};
 	int ret;
 
-	ret = poll(&fds, 1, 30 * 1000);
+    fds[0].fd = sock;
+    fds[0].events = POLLIN;
+
+	fds[1].fd = eventfd(0, 0);
+	fds[1].events = POLLIN;
+
+	ret = poll(fds, 2, 30 * 1000);
 	if (ret < 0) {
 		return ret;
 	}
 
 	if (ret == 0) {
-		LOG_DBG("zsock_poll timeout!");
+		LOG_DBG("poll timeout!");
 		return -EAGAIN;
 	}
 
-	if (fds.revents & ZSOCK_POLLNVAL) {
+	if (fds[0].revents & POLLNVAL) {
 		return -EBADF;
 	}
 
-	if (fds.revents & ZSOCK_POLLERR) {
+	if (fds[0].revents & POLLERR) {
 		return -EIO;
 	}
 
-	if (fds.revents & ZSOCK_POLLIN) {
+	if (fds[0].revents & POLLIN) {
 		wscli_recv(sock, buf, buf_len);
+        LOG_DBG("receive [%s]", buf);
+	}
+
+	if (fds[1].revents) {
+		eventfd_t value;
+
+		eventfd_read(fds[1].fd, &value);
+		LOG_DBG("Received event.");
+
+        send_msg(sock, send_buf, sizeof(send_buf));
 	}
 
 	return 0;
 }
 
-static bool send_and_wait_msg(int sock, uint8_t *buf, size_t buf_len)
+static bool send_msg(int sock, uint8_t *buf, size_t buf_len)
 {
 	int ret;
 
@@ -70,11 +118,6 @@ static bool send_and_wait_msg(int sock, uint8_t *buf, size_t buf_len)
 	} else {
 		LOG_DBG("sent %d bytes", ret);
 	}
-
-
-	recv_with_poll(sock, buf, buf_len);
-
-	LOG_DBG("receive [%s]", buf);
 
 	return true;
 }
@@ -100,16 +143,19 @@ int main(void)
 		k_sleep(K_FOREVER);
     }
 
-    uint8_t recv_buf_ipv4[MAX_RECV_BUF_LEN];
+	k_thread_start(timer_thread_id);
 
 	while (1) {
-		if (!send_and_wait_msg(websock, recv_buf_ipv4, sizeof(recv_buf_ipv4))) {
-			break;
-		}
+        recv_with_poll(websock, recv_buf, sizeof(recv_buf));
 
 		k_sleep(K_MSEC(250));
 	}
 
+    // k_thread_priority_set(k_current_get(), THREAD_PRIORITY);
+	
+	while (1) {
+		k_sleep(K_SECONDS(1));
+	}
 
 	wscli_fini();
 
