@@ -45,21 +45,15 @@ static void timer_looper_thrd(void)
 
         eventfd_write(fds[1].fd, 1);
 
-        printk("Sent signal to main thread\n");
+        LOG_INF("Sent signal to main thread\n");
     }
 
     return;
 }
 
-static int recv_with_poll(int sock, uint8_t *buf, size_t buf_len)
+static int poll_loop(void)
 {
 	int ret;
-
-    fds[0].fd = sock;
-    fds[0].events = POLLIN;
-
-	fds[1].fd = eventfd(0, 0);
-	fds[1].events = POLLIN;
 
 	ret = poll(fds, 2, 30 * 1000);
 	if (ret < 0) {
@@ -71,6 +65,8 @@ static int recv_with_poll(int sock, uint8_t *buf, size_t buf_len)
 		return -EAGAIN;
 	}
 
+    LOG_DBG("poll event GOT!");
+
 	if (fds[0].revents & POLLNVAL) {
 		return -EBADF;
 	}
@@ -80,8 +76,8 @@ static int recv_with_poll(int sock, uint8_t *buf, size_t buf_len)
 	}
 
 	if (fds[0].revents & POLLIN) {
-		wscli_recv(sock, buf, buf_len);
-        LOG_DBG("receive [%s]", buf);
+		wscli_recv(fds[0].fd, recv_buf, sizeof(recv_buf));
+        LOG_DBG("receive [%s]", recv_buf);
 	}
 
 	if (fds[1].revents) {
@@ -90,7 +86,7 @@ static int recv_with_poll(int sock, uint8_t *buf, size_t buf_len)
 		eventfd_read(fds[1].fd, &value);
 		LOG_DBG("Received event.");
 
-        send_msg(sock, send_buf, sizeof(send_buf));
+        send_msg(fds[0].fd, send_buf, sizeof(send_buf));
 	}
 
 	return 0;
@@ -126,6 +122,9 @@ int main(void)
 {
 	k_sleep(K_SECONDS(2));
 
+    fds[0].fd = -1;
+	fds[1].fd = -1;
+
 	int wait_ret = sta_tryconnect();
 	if (wait_ret != 0) {
 		LOG_ERR("WiFi connection failed.");
@@ -139,14 +138,25 @@ int main(void)
 
     int websock = wscli_getsock();
     if (websock < 0) {
-		LOG_ERR("invalid websock");
+		LOG_ERR("invalid websock.");
 		k_sleep(K_FOREVER);
     }
+
+    fds[0].fd = websock;
+    fds[0].events = POLLIN;
+
+    int evfd = eventfd(0, 0);
+    if (evfd < 0) {
+        LOG_ERR("eventfd failed: %d, errno: %d", evfd, errno);
+		k_sleep(K_FOREVER);
+    }
+	fds[1].fd = evfd;
+	fds[1].events = POLLIN;
 
 	k_thread_start(timer_thread_id);
 
 	while (1) {
-        recv_with_poll(websock, recv_buf, sizeof(recv_buf));
+        poll_loop();
 
 		k_sleep(K_MSEC(250));
 	}
