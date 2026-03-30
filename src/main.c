@@ -18,7 +18,23 @@ LOG_MODULE_REGISTER(MAIN, LOG_LEVEL_DBG);
 uint8_t recv_buf[MAX_RECV_BUF_LEN];
 uint8_t send_buf[MAX_RECV_BUF_LEN];
 
-static struct pollfd fds[2];
+sys_slist_t evt_list;
+struct k_mutex evt_list_lock;
+struct evt_msg {
+    sys_snode_t node;
+    unsigned int type;
+    unsigned int len;
+    void *data;
+};
+
+enum {
+    POLLFD_T_SOCKET  = 0,
+    POLLFD_T_EVENTFD = 1,
+
+    __POLLFD_T_MAX__,
+};
+
+static struct pollfd fds[__POLLFD_T_MAX__];
 
 static void timer_looper_thrd(void);
 static bool send_msg(int sock, uint8_t *buf, size_t buf_len);
@@ -36,6 +52,58 @@ K_THREAD_DEFINE(timer_thread_id, STACK_SIZE,
 		THREAD_PRIORITY,
 		IS_ENABLED(CONFIG_USERSPACE) ? K_USER : 0, -1);
 
+enum {
+    EVT_BASE = 0x1000,
+    EVT_TIMER_OUT,
+    EVT_WIFI_CONNECTED = 0x2000,
+};
+
+int evt_send(unsigned int type, unsigned int len, void *data) {
+
+    struct evt_msg *msg = k_malloc(sizeof(struct evt_msg));
+    msg->type = type;
+    msg->len = len;
+    msg->data = data;
+
+    k_mutex_lock(&evt_list_lock, K_FOREVER);
+    sys_slist_append(&evt_list, &msg->node);
+    k_mutex_unlock(&evt_list_lock);
+
+    if (fds[POLLFD_T_EVENTFD].fd >= 0) {
+        eventfd_write(fds[POLLFD_T_EVENTFD].fd, 1);
+    }
+}
+
+void evt_handle(void)
+{
+    k_mutex_lock(&evt_list_lock, K_FOREVER);
+
+    sys_snode_t *node;
+    while ((node = sys_slist_get(&evt_list)) != NULL) {
+        struct evt_msg *msg = CONTAINER_OF(node, struct evt_msg, node);
+
+        if (msg) {
+            if (msg->type == EVT_TIMER_OUT) {
+                send_msg(fds[POLLFD_T_SOCKET].fd, send_buf, sizeof(send_buf));
+            }
+        }
+
+        k_free(msg);
+    }
+
+    k_mutex_unlock(&evt_list_lock);
+
+    return;
+}
+
+static void evt_list_init(void)
+{
+    sys_slist_init(&evt_list);
+    k_mutex_init(&evt_list_lock);
+
+    return;
+}
+
 static void timer_looper_thrd(void)
 {
     LOG_INF("timer_looper_thrd start ...");
@@ -43,7 +111,7 @@ static void timer_looper_thrd(void)
     while(1) {
         k_sleep(K_SECONDS(1));
 
-        eventfd_write(fds[1].fd, 1);
+        evt_send(EVT_TIMER_OUT, 0, NULL);
 
         LOG_INF("Sent signal to main thread\n");
     }
@@ -67,26 +135,28 @@ static int poll_loop(void)
 
     LOG_DBG("poll event GOT!");
 
-	if (fds[0].revents & POLLNVAL) {
+	if (fds[POLLFD_T_SOCKET].revents & POLLNVAL) {
 		return -EBADF;
 	}
 
-	if (fds[0].revents & POLLERR) {
+	if (fds[POLLFD_T_SOCKET].revents & POLLERR) {
 		return -EIO;
 	}
 
-	if (fds[0].revents & POLLIN) {
-		wscli_recv(fds[0].fd, recv_buf, sizeof(recv_buf));
+	if (fds[POLLFD_T_SOCKET].revents & POLLIN) {
+		wscli_recv(fds[POLLFD_T_SOCKET].fd, recv_buf, sizeof(recv_buf));
         LOG_DBG("receive [%s]", recv_buf);
 	}
 
-	if (fds[1].revents) {
+	if (fds[POLLFD_T_EVENTFD].revents) {
 		eventfd_t value;
 
-		eventfd_read(fds[1].fd, &value);
+		eventfd_read(fds[POLLFD_T_EVENTFD].fd, &value);
 		LOG_DBG("Received event.");
 
-        send_msg(fds[0].fd, send_buf, sizeof(send_buf));
+        evt_handle();
+
+        //send_msg(fds[POLLFD_T_SOCKET].fd, send_buf, sizeof(send_buf));
 	}
 
 	return 0;
@@ -120,10 +190,12 @@ static bool send_msg(int sock, uint8_t *buf, size_t buf_len)
 
 int main(void)
 {
+    evt_list_init();
+
 	k_sleep(K_SECONDS(2));
 
-    fds[0].fd = -1;
-	fds[1].fd = -1;
+    fds[POLLFD_T_SOCKET].fd = -1;
+	fds[POLLFD_T_EVENTFD].fd = -1;
 
 	int wait_ret = sta_tryconnect();
 	if (wait_ret != 0) {
@@ -142,18 +214,20 @@ int main(void)
 		k_sleep(K_FOREVER);
     }
 
-    fds[0].fd = websock;
-    fds[0].events = POLLIN;
+    fds[POLLFD_T_SOCKET].fd = websock;
+    fds[POLLFD_T_SOCKET].events = POLLIN;
 
     int evfd = eventfd(0, 0);
     if (evfd < 0) {
         LOG_ERR("eventfd failed: %d, errno: %d", evfd, errno);
 		k_sleep(K_FOREVER);
     }
-	fds[1].fd = evfd;
-	fds[1].events = POLLIN;
+	fds[POLLFD_T_EVENTFD].fd = evfd;
+	fds[POLLFD_T_EVENTFD].events = POLLIN;
 
 	k_thread_start(timer_thread_id);
+
+    ble_rc_init();
 
 	while (1) {
         poll_loop();
@@ -162,7 +236,7 @@ int main(void)
 	}
 
     // k_thread_priority_set(k_current_get(), THREAD_PRIORITY);
-	
+
 	while (1) {
 		k_sleep(K_SECONDS(1));
 	}

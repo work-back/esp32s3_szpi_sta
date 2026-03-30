@@ -68,7 +68,7 @@ static int setup_socket(sa_family_t family, const char *server, int port,
 }
 
 static int connect_socket(sa_family_t family, const char *server, int port,
-			  int *sock, struct sockaddr *addr, socklen_t addr_len)
+			              int *sock, struct sockaddr *addr, socklen_t addr_len)
 {
 	int ret;
 
@@ -79,10 +79,8 @@ static int connect_socket(sa_family_t family, const char *server, int port,
 
 	ret = connect(*sock, addr, addr_len);
 	if (ret < 0) {
-		LOG_ERR("Cannot connect to %s remote (%d)",
-			family == AF_INET ? "IPv4" : "IPv6",
-			-errno);
-		ret = -errno;
+		LOG_ERR("socket cannot connect to %s:%d remote, errno: (%d)\n", server, port, errno);
+		ret = -1;
 	}
 
 	return ret;
@@ -152,9 +150,11 @@ int wscli_init(void)
 		return -1;
 	}
 
-	(void)connect_socket(AF_INET, SERVER_ADDR4, SERVER_PORT,
-				&g_sock4, (struct sockaddr *)&addr4,
-				sizeof(addr4));
+	if (connect_socket(AF_INET, SERVER_ADDR4, SERVER_PORT,
+                       &g_sock4, (struct sockaddr *)&addr4, sizeof(addr4))) {
+		LOG_ERR("connect_socket failed.");
+		return -1;
+    }
 
 	if (g_sock4 < 0) {
 		LOG_ERR("connect_socket failed.");
