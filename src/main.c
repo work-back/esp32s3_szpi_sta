@@ -18,8 +18,8 @@
 
 LOG_MODULE_REGISTER(MAIN, LOG_LEVEL_DBG);
 
-uint8_t recv_buf[MAX_RECV_BUF_LEN];
-uint8_t send_buf[MAX_RECV_BUF_LEN];
+__attribute__ ((section (".ext_ram.bss"))) uint8_t recv_buf[MAX_RECV_BUF_LEN];
+__attribute__ ((section (".ext_ram.bss"))) uint8_t send_buf[MAX_RECV_BUF_LEN];
 
 sys_slist_t evt_list;
 struct k_mutex evt_list_lock;
