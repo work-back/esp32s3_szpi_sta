@@ -8,6 +8,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/net/wifi_mgmt.h>
 
+#include "wscli.h"
+
 LOG_MODULE_REGISTER(STA, LOG_LEVEL_DBG);
 
 #define MACSTR "%02X:%02X:%02X:%02X:%02X:%02X"
@@ -26,9 +28,11 @@ static struct net_mgmt_event_callback cb;
 BUILD_ASSERT(sizeof(CONFIG_WIFI_SAMPLE_SSID) > 1,
 	     "CONFIG_WIFI_SAMPLE_SSID is empty. Please set it in conf file.");
 
+#ifdef WIFI_WAIT_WITH_SEM
 /* 1. 定义 WiFi 连接成功的信号量 */
 /* 初始值为 0，表示初始状态为“未连接”，需要等待事件发生 */
 K_SEM_DEFINE(wifi_connected_sem, 0, 1);
+#endif
 
 
 static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event,
@@ -37,7 +41,11 @@ static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt
 	switch (mgmt_event) {
 	case NET_EVENT_WIFI_CONNECT_RESULT: {
 		LOG_INF("Connected to %s", CONFIG_WIFI_SAMPLE_SSID);
+#ifdef WIFI_WAIT_WITH_SEM
 		k_sem_give(&wifi_connected_sem);
+#else
+        evt_send(EVT_WIFI_CONNECTED, 0, NULL);
+#endif
 		break;
 	}
 	case NET_EVENT_WIFI_DISCONNECT_RESULT: {
@@ -87,6 +95,7 @@ int sta_tryconnect(void)
         return -1;
 	}
 
+#ifdef WIFI_WAIT_WITH_SEM
 	/* K_FOREVER 表示一直等待，也可以设置超时时间如 K_SECONDS(300) */
 	int wait_ret = k_sem_take(&wifi_connected_sem, K_SECONDS(300));
 	if (wait_ret == 0) {
@@ -96,4 +105,7 @@ int sta_tryconnect(void)
 		LOG_ERR("WiFi connection wait timed out or interrupted.");
         return -1;
 	}
+#else
+    return 0;
+#endif
 }

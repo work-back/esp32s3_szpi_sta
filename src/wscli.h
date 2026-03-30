@@ -13,4 +13,13 @@ ssize_t wscli_send(int sock, const void *buf, size_t len);
 
 int ble_rc_init(void);
 
+enum {
+    EVT_BASE = 0x1000,
+    EVT_TIMER_OUT,
+    EVT_WIFI_STA_START,
+    EVT_WIFI_CONNECTED = 0x2000,
+};
+
+int evt_send(unsigned int type, unsigned int len, void *data);
+
 #endif //__WS_CLI_H__

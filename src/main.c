@@ -1,3 +1,6 @@
+#include <string.h>
+#include <stdlib.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -28,16 +31,17 @@ struct evt_msg {
 };
 
 enum {
-    POLLFD_T_SOCKET  = 0,
-    POLLFD_T_EVENTFD = 1,
+    POLLFD_T_EVENTFD = 0,
+    POLLFD_T_SOCKET  = 1,
 
     __POLLFD_T_MAX__,
 };
 
-static struct pollfd fds[__POLLFD_T_MAX__];
+static struct pollfd g_fds[__POLLFD_T_MAX__];
 
 static void timer_looper_thrd(void);
 static bool send_msg(int sock, uint8_t *buf, size_t buf_len);
+static void try_connect_ws(void);
 
 #if defined(CONFIG_NET_TC_THREAD_PREEMPTIVE)
 #define THREAD_PRIORITY K_PRIO_PREEMPT(8)
@@ -52,13 +56,8 @@ K_THREAD_DEFINE(timer_thread_id, STACK_SIZE,
 		THREAD_PRIORITY,
 		IS_ENABLED(CONFIG_USERSPACE) ? K_USER : 0, -1);
 
-enum {
-    EVT_BASE = 0x1000,
-    EVT_TIMER_OUT,
-    EVT_WIFI_CONNECTED = 0x2000,
-};
-
-int evt_send(unsigned int type, unsigned int len, void *data) {
+int evt_send(unsigned int type, unsigned int len, void *data)
+{
 
     struct evt_msg *msg = k_malloc(sizeof(struct evt_msg));
     msg->type = type;
@@ -69,38 +68,64 @@ int evt_send(unsigned int type, unsigned int len, void *data) {
     sys_slist_append(&evt_list, &msg->node);
     k_mutex_unlock(&evt_list_lock);
 
-    if (fds[POLLFD_T_EVENTFD].fd >= 0) {
-        eventfd_write(fds[POLLFD_T_EVENTFD].fd, 1);
+    if (g_fds[POLLFD_T_EVENTFD].fd >= 0) {
+        eventfd_write(g_fds[POLLFD_T_EVENTFD].fd, 1);
     }
 }
 
 void evt_handle(void)
 {
-    k_mutex_lock(&evt_list_lock, K_FOREVER);
 
-    sys_snode_t *node;
-    while ((node = sys_slist_get(&evt_list)) != NULL) {
+    sys_snode_t *node = NULL;
+    while (1) {
+        k_mutex_lock(&evt_list_lock, K_FOREVER);
+        node = sys_slist_get(&evt_list);
+        k_mutex_unlock(&evt_list_lock);
+
+        if (NULL == node) {
+            break;
+        }
+
         struct evt_msg *msg = CONTAINER_OF(node, struct evt_msg, node);
 
         if (msg) {
             if (msg->type == EVT_TIMER_OUT) {
-                send_msg(fds[POLLFD_T_SOCKET].fd, send_buf, sizeof(send_buf));
+                send_msg(g_fds[POLLFD_T_SOCKET].fd, send_buf, sizeof(send_buf));
+            } else if (msg->type == EVT_WIFI_STA_START) {
+                int wait_ret = sta_tryconnect();
+                if (wait_ret != 0) {
+                    LOG_ERR("WiFi connection failed.");
+                }
+            } else if (msg->type == EVT_WIFI_CONNECTED) {
+                LOG_INF("WiFi connected, starting WSCLI...");
+                try_connect_ws();
+
+                k_thread_start(timer_thread_id);
+
+                ble_rc_init();
             }
         }
 
         k_free(msg);
     }
 
-    k_mutex_unlock(&evt_list_lock);
-
     return;
 }
 
-static void evt_list_init(void)
+static void evt_init(void)
 {
     sys_slist_init(&evt_list);
     k_mutex_init(&evt_list_lock);
 
+    int evfd = eventfd(0, 0);
+    if (evfd < 0) {
+        LOG_ERR("eventfd failed: %d, errno: %d", evfd, errno);
+		k_sleep(K_FOREVER);
+    }
+
+	g_fds[POLLFD_T_EVENTFD].fd = evfd;
+	g_fds[POLLFD_T_EVENTFD].events = POLLIN;
+    
     return;
 }
 
@@ -119,11 +144,40 @@ static void timer_looper_thrd(void)
     return;
 }
 
+static void try_connect_ws(void)
+{
+	wscli_init();
+
+    int websock = wscli_getsock();
+    if (websock < 0) {
+		LOG_ERR("invalid websock.");
+		k_sleep(K_FOREVER);
+    }
+
+    g_fds[POLLFD_T_SOCKET].fd = websock;
+    g_fds[POLLFD_T_SOCKET].events = POLLIN;
+
+    return;
+}
+
 static int poll_loop(void)
 {
 	int ret;
+    int fd_n = 0;
 
-	ret = poll(fds, 2, 30 * 1000);
+    struct pollfd _fds[__POLLFD_T_MAX__];
+
+    for (int i = 0; i < __POLLFD_T_MAX__; i++) {
+        if (g_fds[i].fd >= 0) {
+            LOG_DBG("add fd[%d]:[%d] to poll.", i, g_fds[i].fd);
+
+            _fds[i].fd = g_fds[i].fd;
+            _fds[i].events = g_fds[i].events;
+            fd_n++;
+        }
+    }
+
+	ret = poll(_fds, fd_n, 30 * 1000);
 	if (ret < 0) {
 		return ret;
 	}
@@ -135,28 +189,28 @@ static int poll_loop(void)
 
     LOG_DBG("poll event GOT!");
 
-	if (fds[POLLFD_T_SOCKET].revents & POLLNVAL) {
+	if (_fds[POLLFD_T_SOCKET].revents & POLLNVAL) {
 		return -EBADF;
 	}
 
-	if (fds[POLLFD_T_SOCKET].revents & POLLERR) {
+	if (_fds[POLLFD_T_SOCKET].revents & POLLERR) {
 		return -EIO;
 	}
 
-	if (fds[POLLFD_T_SOCKET].revents & POLLIN) {
-		wscli_recv(fds[POLLFD_T_SOCKET].fd, recv_buf, sizeof(recv_buf));
+	if (_fds[POLLFD_T_SOCKET].revents & POLLIN) {
+		wscli_recv(_fds[POLLFD_T_SOCKET].fd, recv_buf, sizeof(recv_buf));
         LOG_DBG("receive [%s]", recv_buf);
 	}
 
-	if (fds[POLLFD_T_EVENTFD].revents) {
+	if (_fds[POLLFD_T_EVENTFD].revents) {
 		eventfd_t value;
 
-		eventfd_read(fds[POLLFD_T_EVENTFD].fd, &value);
+		eventfd_read(_fds[POLLFD_T_EVENTFD].fd, &value);
 		LOG_DBG("Received event.");
 
         evt_handle();
 
-        //send_msg(fds[POLLFD_T_SOCKET].fd, send_buf, sizeof(send_buf));
+        //send_msg(_fds[POLLFD_T_SOCKET].fd, send_buf, sizeof(send_buf));
 	}
 
 	return 0;
@@ -190,44 +244,14 @@ static bool send_msg(int sock, uint8_t *buf, size_t buf_len)
 
 int main(void)
 {
-    evt_list_init();
-
-	k_sleep(K_SECONDS(2));
-
-    fds[POLLFD_T_SOCKET].fd = -1;
-	fds[POLLFD_T_EVENTFD].fd = -1;
-
-	int wait_ret = sta_tryconnect();
-	if (wait_ret != 0) {
-		LOG_ERR("WiFi connection failed.");
-		k_sleep(K_FOREVER);
-	}
-
 	k_sleep(K_SECONDS(1));
-    LOG_INF("WiFi connected, starting WSCLI...");
 
-	wscli_init();
+	g_fds[POLLFD_T_EVENTFD].fd = -1;
+    g_fds[POLLFD_T_SOCKET].fd = -1;
 
-    int websock = wscli_getsock();
-    if (websock < 0) {
-		LOG_ERR("invalid websock.");
-		k_sleep(K_FOREVER);
-    }
+    evt_init();
 
-    fds[POLLFD_T_SOCKET].fd = websock;
-    fds[POLLFD_T_SOCKET].events = POLLIN;
-
-    int evfd = eventfd(0, 0);
-    if (evfd < 0) {
-        LOG_ERR("eventfd failed: %d, errno: %d", evfd, errno);
-		k_sleep(K_FOREVER);
-    }
-	fds[POLLFD_T_EVENTFD].fd = evfd;
-	fds[POLLFD_T_EVENTFD].events = POLLIN;
-
-	k_thread_start(timer_thread_id);
-
-    ble_rc_init();
+    evt_send(EVT_WIFI_STA_START, 0, NULL);
 
 	while (1) {
         poll_loop();
