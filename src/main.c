@@ -100,7 +100,7 @@ void evt_handle(void)
                 LOG_INF("WiFi connected, starting WSCLI...");
                 try_connect_ws();
 
-                k_thread_start(timer_thread_id);
+                // k_thread_start(timer_thread_id);
 
                 ble_rc_init();
             }
@@ -169,7 +169,7 @@ static int poll_loop(void)
 
     for (int i = 0; i < __POLLFD_T_MAX__; i++) {
         if (g_fds[i].fd >= 0) {
-            LOG_DBG("add fd[%d]:[%d] to poll.", i, g_fds[i].fd);
+            // LOG_DBG("add fd[%d]:[%d] to poll.\n", i, g_fds[i].fd);
 
             _fds[i].fd = g_fds[i].fd;
             _fds[i].events = g_fds[i].events;
