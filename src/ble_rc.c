@@ -8,6 +8,7 @@
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/settings/settings.h>
+#include <zephyr/bluetooth/controller.h>
 
 enum {
     HIDS_REMOTE_WAKE = BIT(0),
@@ -506,15 +507,55 @@ void adv_mode_switch_handler(struct k_work *work)
     advertising_start();
 }
 
+static void __swap_addr(uint8_t *a)
+{
+	uint8_t t0 = 0, t1 = 0, t2 = 0;
+
+	t0 = a[0];
+	t1 = a[1];
+	t2 = a[2];
+
+	a[0] = a[5];
+	a[1] = a[4];
+	a[2] = a[3];
+
+	a[3] = t2;
+	a[4] = t1;
+	a[5] = t0;
+
+	return;
+}
+
+static void set_public_addr(void)
+{
+    bt_addr_le_t addr = {BT_ADDR_LE_RANDOM, {{0xF4, 0x72, 0x57, 0x54, 0xCC, 0x6E}}};
+	// bt_addr_le_t addr = {BT_ADDR_LE_RANDOM, {{0x0A, 0x89, 0x67, 0x45, 0x23, 0xC1}}};
+
+	__swap_addr(addr.a.val);
+
+    g_id = bt_id_create(&addr, NULL);
+	if (g_id < 0) {
+		printk("ID create Failed, (err %d)\n", g_id);
+	} else {
+		printk("ID create SUCCESS, ID: %d\n", g_id);
+	}
+}
+
 int ble_rc_init(void)
 {
     int err;
+
+    printk("BLE RC INIT start ...\n");
+
+    set_public_addr();
 
     err = bt_enable(NULL);
     if (err) {
         printk("Bluetooth init failed (err %d)\n", err);
         return 0;
     }
+
+    printk("bt enable success.\n");
 
     k_work_init(&adv_work, advertising_process);
     k_work_init_delayable(&adv_mode_switch_work, adv_mode_switch_handler);

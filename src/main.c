@@ -151,7 +151,7 @@ static void try_connect_ws(void)
     int websock = wscli_getsock();
     if (websock < 0) {
 		LOG_ERR("invalid websock.");
-		k_sleep(K_FOREVER);
+		return -1;
     }
 
     g_fds[POLLFD_T_SOCKET].fd = websock;
