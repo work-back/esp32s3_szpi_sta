@@ -22,4 +22,8 @@ enum {
 
 int evt_send(unsigned int type, unsigned int len, void *data);
 
+#define MAC_FMT "%02X:%02X:%02X:%02X:%02X:%02X"
+#define MAC_DATA(m) m[0], m[1], m[2], m[3], m[4], m[5]
+
+
 #endif //__WS_CLI_H__

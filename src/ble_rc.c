@@ -10,6 +10,8 @@
 #include <zephyr/settings/settings.h>
 #include <zephyr/bluetooth/controller.h>
 
+#include "wscli.h"
+
 enum {
     HIDS_REMOTE_WAKE = BIT(0),
     HIDS_NORMALLY_CONNECTABLE = BIT(1),
@@ -231,8 +233,8 @@ static const struct bt_data ad_wakeup[] = {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
     BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x80, 0x01),
     BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL)),
-	// BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 2),
-	BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
+	BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 2),
+	// BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
 };
 
 /* GATT 属性定义 */
@@ -270,6 +272,16 @@ BT_GATT_SERVICE_DEFINE(hid_svc,
                            NULL, write_ctrl_point, &ctrl_point),
 );
 
+static void bond_find(const struct bt_bond_info *info, void *user_data)
+{
+    // printk("bond_find type:%d mac:["MAC_FMT"]\n", dst->type, dst->a.val);
+
+    char _t[64];
+    bt_addr_le_to_str(&(info->addr), _t, sizeof(_t));
+    printk("bond_find [%s]", _t);
+
+    return;
+}
 
 static void advertising_continue(void)
 {
@@ -344,6 +356,12 @@ static void advertising_start(void)
 #if CONFIG_BT_DIRECTED_ADVERTISING
     k_msgq_purge(&bonds_queue);
     bt_foreach_bond(BT_ID_DEFAULT, bond_find, NULL);
+#else
+    if (g_id < 0) {
+        bt_foreach_bond(BT_ID_DEFAULT, bond_find, NULL);
+    } else {
+        bt_foreach_bond(g_id, bond_find, NULL);
+    }
 #endif
 
     if (is_adv_running) {
@@ -478,6 +496,7 @@ static int try_advertising_start(int time_s)
     advertising_start();
 
     if (time_s) {
+        printk("advertising will continue %d s\n", time_s);
         k_work_reschedule(&adv_mode_switch_work, K_MSEC(time_s * 1000));
     }
 
@@ -486,9 +505,15 @@ static int try_advertising_start(int time_s)
 
 static int cmd_start_adv(const struct shell *sh, size_t argc, char **argv)
 {
+    int continue_time_s = 5;
+
+    if (argc >= 2) {
+        continue_time_s = atoi(argv[1]);
+    }
+
     g_wakeup_adv_mode = false;
 
-    try_advertising_start(5);
+    try_advertising_start(continue_time_s);
 
     return 0;
 }
@@ -497,9 +522,15 @@ SHELL_CMD_REGISTER(start_adv, NULL, "Start ble adv", cmd_start_adv);
 
 static int cmd_wakeup(const struct shell *sh, size_t argc, char **argv)
 {
+    int continue_time_s = 5;
+
+    if (argc >= 2) {
+        continue_time_s = atoi(argv[1]);
+    }
+
     g_wakeup_adv_mode = true;
 
-    try_advertising_start(5);
+    try_advertising_start(continue_time_s);
 
     return 0;
 }
