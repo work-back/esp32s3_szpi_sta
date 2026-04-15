@@ -223,15 +223,16 @@ static const struct bt_data sd[] = {
 
 static uint8_t mfg_data[] = { 0x00, 0x01 };
 static uint8_t uuid_data[] = { 0x00, 0x01, 0x02, 0x01, 0x05, 0x03, 0xff, 0x00, 0x01,
-                               0xA8, 0xA0, 0x92, 0x30, 0x11, 0x57,
-							//    0x6C, 0x05, 0xD3, 0x27, 0x70, 0xFB,
+                            // 0xA8, 0xA0, 0x92, 0x30, 0x11, 0x57,
+							// 0x6C, 0x05, 0xD3, 0x27, 0x70, 0xFB,
+                               0xC8, 0x26, 0xE2, 0x17, 0xDC, 0x52,
 							   0x00, };
 static const struct bt_data ad_wakeup[] = {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
     BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x80, 0x01),
     BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL)),
-	BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 2),
-	// BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
+	// BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 2),
+	BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
 };
 
 /* GATT 属性定义 */
@@ -332,7 +333,7 @@ static void advertising_continue(void)
             return;
         }
 
-        printk("Regular advertising started\n");
+        printk("Regular advertising started [%s]\n", g_wakeup_adv_mode ? "Wakeup adv" : "Pair adv");
     }
 
     is_adv_running = true;
@@ -466,27 +467,39 @@ static int cmd_send_key(const struct shell *sh, size_t argc, char **argv)
 
 SHELL_CMD_REGISTER(send, NULL, "Send keycode: send <hex>", cmd_send_key);
 
+struct k_work_delayable adv_mode_switch_work;
+
+static int try_advertising_start(int time_s)
+{
+    advertising_stop();
+
+    k_sleep(K_MSEC(100));
+
+    advertising_start();
+
+    if (time_s) {
+        k_work_reschedule(&adv_mode_switch_work, K_MSEC(time_s * 1000));
+    }
+
+    return 0;
+}
+
 static int cmd_start_adv(const struct shell *sh, size_t argc, char **argv)
 {
-    advertising_start();
+    g_wakeup_adv_mode = false;
+
+    try_advertising_start(5);
 
     return 0;
 }
 
 SHELL_CMD_REGISTER(start_adv, NULL, "Start ble adv", cmd_start_adv);
 
-struct k_work_delayable adv_mode_switch_work;
-
 static int cmd_wakeup(const struct shell *sh, size_t argc, char **argv)
 {
-    advertising_stop();
-
-    k_sleep(K_MSEC(100));
-
     g_wakeup_adv_mode = true;
-    advertising_start();
 
-    k_work_reschedule(&adv_mode_switch_work, K_MSEC(500));
+    try_advertising_start(5);
 
     return 0;
 }
@@ -504,7 +517,7 @@ void adv_mode_switch_handler(struct k_work *work)
     k_sleep(K_MSEC(100));
 
     g_wakeup_adv_mode = false;
-    advertising_start();
+    // advertising_start();
 }
 
 static void __swap_addr(uint8_t *a)
@@ -528,8 +541,8 @@ static void __swap_addr(uint8_t *a)
 
 static void set_public_addr(void)
 {
-    bt_addr_le_t addr = {BT_ADDR_LE_RANDOM, {{0xF4, 0x72, 0x57, 0x54, 0xCC, 0x6E}}};
-	// bt_addr_le_t addr = {BT_ADDR_LE_RANDOM, {{0x0A, 0x89, 0x67, 0x45, 0x23, 0xC1}}};
+    // bt_addr_le_t addr = {BT_ADDR_LE_RANDOM, {{0xF4, 0x72, 0x57, 0x54, 0xCC, 0x6E}}};
+    bt_addr_le_t addr = {BT_ADDR_LE_RANDOM, {{0xF4, 0x72, 0x57, 0x12, 0x8C, 0xA6}}};
 
 	__swap_addr(addr.a.val);
 
@@ -541,12 +554,20 @@ static void set_public_addr(void)
 	}
 }
 
+static void fix_uuid_data(void)
+{
+	__swap_addr(&(uuid_data[9]));
+
+	return;
+}
+
 int ble_rc_init(void)
 {
     int err;
 
     printk("BLE RC INIT start ...\n");
 
+    fix_uuid_data();
     set_public_addr();
 
     err = bt_enable(NULL);
@@ -560,7 +581,7 @@ int ble_rc_init(void)
     k_work_init(&adv_work, advertising_process);
     k_work_init_delayable(&adv_mode_switch_work, adv_mode_switch_handler);
 
-    advertising_start();
+    // advertising_start();
 
     if (IS_ENABLED(CONFIG_SETTINGS)) {
         settings_load();
