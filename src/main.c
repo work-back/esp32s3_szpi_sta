@@ -98,7 +98,7 @@ void evt_handle(void)
                 }
             } else if (msg->type == EVT_WIFI_CONNECTED) {
                 LOG_INF("WiFi connected, starting WSCLI...");
-                try_connect_ws();
+                // try_connect_ws();
 
                 // k_thread_start(timer_thread_id);
 

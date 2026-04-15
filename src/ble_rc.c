@@ -224,6 +224,7 @@ static const struct bt_data sd[] = {
 };
 
 static uint8_t mfg_data[] = { 0x00, 0x01 };
+static uint8_t fe_data[] = { 0x52, 0xDC, 0x17 }; // 52:DC:17:E2:26:C8
 static uint8_t uuid_data[] = { 0x00, 0x01, 0x02, 0x01, 0x05, 0x03, 0xff, 0x00, 0x01,
                             // 0xA8, 0xA0, 0x92, 0x30, 0x11, 0x57,
 							// 0x6C, 0x05, 0xD3, 0x27, 0x70, 0xFB,
@@ -234,6 +235,7 @@ static const struct bt_data ad_wakeup[] = {
     BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x80, 0x01),
     BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL)),
 	BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 2),
+	BT_DATA(0xfe, fe_data, 3),
 	// BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
 };
 
