@@ -1,53 +1,72 @@
 #include "rpc_route.h"
 
-struct rpc_request {
-    const char *func;
-    struct json_obj_token paras; 
-};
 
-static const struct json_obj_descr rpc_request_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct rpc_request, func, JSON_TOK_STRING),
-    // 关键点：JSON_TOK_OPAQUE 把 paras 里面的 {} 内容原封不动保留
-    JSON_OBJ_DESCR_PRIM(struct rpc_request, paras, JSON_TOK_OPAQUE),
-};
-
-
-// 针对 "start_ble_adv" 的参数
-struct ble_adv_paras {
-    int continue_time;
-};
-
-static const struct json_obj_descr ble_adv_paras_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct ble_adv_paras, continue_time, JSON_TOK_NUMBER),
-};
-
-void func_start_ble_adv(struct json_obj_token *paras_token)
+/*
 {
-    struct ble_adv_paras p = {0};
-    
-    // 第二次解析：只解析 paras 里面的内容
-    int ret = json_obj_parse(paras_token->start, paras_token->length,
-                             ble_adv_paras_descr, ARRAY_SIZE(ble_adv_paras_descr),
-                             &p);
-    if (ret < 0) {
-        printk("BLE parse failed!\n");
-        return;
-    }
+    "func":"ble_adv",
+    "paras": [
+        {"k":"duration", "v":"100"},
+        {"k":"op", "v":"start"}
+    ]
+}
+*/
 
-    printk(">>> start_ble_adv, continue_time %d ms\n", p.continue_time);
+#define MAX_PARAS 5 
+
+struct parameter {
+    const char *k;
+    const char *v;
+};
+
+struct rpc_func {
+    const char *func;
+    struct parameter paras[MAX_PARAS]; // 静态数组
+    size_t num_paras;                  // 用于保存实际解析出的数组元素个数 
+};
+
+static const struct json_obj_descr param_descr[] = {
+    JSON_OBJ_DESCR_PRIM(struct parameter, k, JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM(struct parameter, v, JSON_TOK_STRING),
+};
+
+
+static const struct json_obj_descr rpc_req_descr[] = {
+    JSON_OBJ_DESCR_PRIM(struct rpc_func, func, JSON_TOK_STRING),
+    /* 解析对象数组：指定最大容量、实际数量变量、以及内层描述符 */
+    JSON_OBJ_DESCR_OBJ_ARRAY(struct rpc_func, paras, MAX_PARAS, num_paras, 
+                             param_descr, ARRAY_SIZE(param_descr)),
+};
+
+
+void func_start_ble_adv(struct parameter *paras, size_t num_paras)
+{
+    for (size_t i = 0; i < num_paras; i++) {
+        printk("  [%d] k: %s, v: %s\n", i, paras[i].k, paras[i].v);
+    }
 }
 
+
+struct rpc_route {
+    const char *func_name;
+    void (*handler)(struct parameter *paras, size_t num_paras);
+};
+
 static const struct rpc_route routes[] = {
-    {"start_ble_adv", func_start_ble_adv},
+    {"ble_adv", func_start_ble_adv},
     // {"set_wifi",      handle_set_wifi},
 };
 
-void rpc_execute(char *json_str)
+/* 
+    * 【重要警告】: 
+    * Zephyr 的 json_obj_parse() 在解析字符串时会修改原字符串（插入 '\0'），
+    * 因此 JSON 数据必须存放在可读写的 RAM 中 (char [])，绝对不能是 const char * 
+    */
+void rpc_execute(char *json_str, size_t json_str_len)
 {
-    struct rpc_request req = {0};
+    struct rpc_func req = {0}; // 初始化清零
 
-    int ret = json_obj_parse(json_str, strlen(json_str),
-                             rpc_request_descr, ARRAY_SIZE(rpc_request_descr),
+    int ret = json_obj_parse(json_str, json_str_len, 
+                             rpc_req_descr, ARRAY_SIZE(rpc_req_descr), 
                              &req);
     
     if (ret < 0 || req.func == NULL) {
@@ -59,7 +78,7 @@ void rpc_execute(char *json_str)
 
     for(int i=0; i < ARRAY_SIZE(routes); i++) {
         if (strcmp(req.func, routes[i].func_name) == 0) {
-            routes[i].handler(&req.paras);
+            routes[i].handler(req.paras, req.num_paras);
             break;
         }
     }

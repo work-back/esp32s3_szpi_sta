@@ -162,7 +162,7 @@ static void try_connect_ws(void)
 
 static void ws_msg_handle(char *msg, int len)
 {
-    rpc_execute(msg);
+    rpc_execute(msg, len);
 
     return;
 }
