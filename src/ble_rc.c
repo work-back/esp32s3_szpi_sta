@@ -431,6 +431,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
         printk("Set security Successed.\n");
     }
 
+    #if 1
     /* 防止 GATT 超时 断开
      * https://aistudio.google.com/prompts/1GJsbMHOL_QnUtfOqwx9DFhbDy58Q81Nv
      */
@@ -439,6 +440,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
     } else {
         printk("Conn param update requested!\n");
     }
+    #endif
 
     return;
 }
@@ -504,7 +506,13 @@ static int cmd_send_key(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
-SHELL_CMD_REGISTER(send, NULL, "Send keycode: send <hex>", cmd_send_key);
+SHELL_CMD_REGISTER(send, NULL, "Send keycode: send <hex>\n\r"
+                                "- Left:   0x50, Right:  0x4f\n\r"
+                                "- UP:     0x52, Down:   0x51\n\r"
+                                "- OK:     0x28\n\r"
+                                "- Return: 0xf1\n\r"
+                                "- Power:  0x66\n\r"
+                    , cmd_send_key);
 
 struct k_work_delayable adv_mode_switch_work;
 
