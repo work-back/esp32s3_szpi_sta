@@ -38,11 +38,64 @@ static const struct json_obj_descr rpc_req_descr[] = {
 };
 
 
-void func_start_ble_adv(struct parameter *paras, size_t num_paras)
+static /* inline */ const char* get_v_by_k(struct parameter *paras, size_t num_paras, const char *key) {
+    for (size_t i = 0; i < num_paras; i++) {
+        if (strcmp(paras[i].k, key) == 0) {
+            return paras[i].v;
+        }
+    }
+    return NULL;
+}
+
+#define FUNC_ARGS_LIST struct parameter *paras, size_t num
+
+#define DEBUG_PRINT_PARAMS do { \
+    for (size_t _i = 0; _i < (num); _i++) { \
+        printk("  [%zu] k: %s, v: %s\n", _i, (paras)[_i].k, (paras)[_i].v); \
+    } \
+} while(0)
+
+#define GET_PARAM_REQUIRED(var_name, key) \
+    const char *var_name = get_v_by_k(paras, num, key); \
+    if (!var_name) { \
+        printk("Error: Missing required parameter '%s'\n", key); \
+        return; \
+    }
+
+#define GET_PARAM_OPTIONAL(var_name, key, default_val) \
+    const char *var_name = get_v_by_k(paras, num, key); \
+    if (!var_name) { \
+        var_name = default_val; \
+    }
+
+int get_k_idx(struct parameter *paras, size_t num_paras, const char *key)
 {
     for (size_t i = 0; i < num_paras; i++) {
-        printk("  [%d] k: %s, v: %s\n", i, paras[i].k, paras[i].v);
+        if (0 == strncmp(paras[i].k, key, strlen(key))) {
+            return i;
+        }
     }
+
+    printk("get_k_idx: Cant not get [%s]!\n", key);
+    return -1;
+}
+
+void func_start_ble_adv(FUNC_ARGS_LIST)
+{
+    /*
+        {"k":"duration", "v":"100"},
+        {"k":"op", "v":"start"}
+    */
+
+    // 1. 打印调试信息
+    DEBUG_PRINT_PARAMS;
+
+    // 2. 获取必填参数 (找不到会自动 return)
+    GET_PARAM_REQUIRED(duration_str, "duration");
+    GET_PARAM_REQUIRED(op_str, "op");
+
+    // 3. 执行业务逻辑
+    printk("duration:%s, op:%s\n", duration_str, op_str);
 }
 
 
