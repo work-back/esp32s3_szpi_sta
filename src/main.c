@@ -98,7 +98,7 @@ void evt_handle(void)
                 }
             } else if (msg->type == EVT_WIFI_CONNECTED) {
                 LOG_INF("WiFi connected, starting WSCLI...");
-                // try_connect_ws();
+                try_connect_ws();
 
                 // k_thread_start(timer_thread_id);
 
@@ -160,6 +160,13 @@ static void try_connect_ws(void)
     return;
 }
 
+static void ws_msg_handle(char *msg, int len)
+{
+    rpc_execute(msg);
+
+    return;
+}
+
 static int poll_loop(void)
 {
 	int ret;
@@ -198,8 +205,9 @@ static int poll_loop(void)
 	}
 
 	if (_fds[POLLFD_T_SOCKET].revents & POLLIN) {
-		wscli_recv(_fds[POLLFD_T_SOCKET].fd, recv_buf, sizeof(recv_buf));
+		int r_len = wscli_recv(_fds[POLLFD_T_SOCKET].fd, recv_buf, sizeof(recv_buf));
         LOG_DBG("receive [%s]", recv_buf);
+        ws_msg_handle(recv_buf, r_len);
 	}
 
 	if (_fds[POLLFD_T_EVENTFD].revents) {

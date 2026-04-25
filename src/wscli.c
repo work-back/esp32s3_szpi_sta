@@ -29,7 +29,7 @@ LOG_MODULE_REGISTER(WSCLI, LOG_LEVEL_DBG);
 #if defined(CONFIG_NET_CONFIG_PEER_IPV4_ADDR)
 #define SERVER_ADDR4  CONFIG_NET_CONFIG_PEER_IPV4_ADDR
 #else
-#define SERVER_ADDR4 "192.168.66.155"
+#define SERVER_ADDR4 "192.168.9.245"
 #endif
 
 /* We need to allocate bigger buffer for the websocket data we receive so that
