@@ -224,19 +224,18 @@ static const struct bt_data sd[] = {
 };
 
 static uint8_t mfg_data[] = { 0x00, 0x01 };
-static uint8_t fe_data[] = { 0x52, 0xDC, 0x17 }; // 52:DC:17:E2:26:C8
+static uint8_t fe_data[] = { 0x52, 0xDC, 0x17 }; // C8:26:E2:17:DC:52
 static uint8_t uuid_data[] = { 0x00, 0x01, 0x02, 0x01, 0x05, 0x03, 0xff, 0x00, 0x01,
-                            // 0xA8, 0xA0, 0x92, 0x30, 0x11, 0x57,
-							// 0x6C, 0x05, 0xD3, 0x27, 0x70, 0xFB,
                                0xC8, 0x26, 0xE2, 0x17, 0xDC, 0x52,
+                               // 0xA8, 0xA0, 0x92, 0x30, 0x11, 0x57,
 							   0x00, };
 static const struct bt_data ad_wakeup[] = {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
     BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x80, 0x01),
     BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL)),
-	BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 2),
-	BT_DATA(0xfe, fe_data, 3),
-	// BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
+	// BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 2),
+	// BT_DATA(0xfe, fe_data, 3),
+	BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
 };
 
 /* GATT 属性定义 */
@@ -397,6 +396,13 @@ static void advertising_process(struct k_work *work)
     advertising_continue();
 }
 
+struct bt_le_conn_param param = {
+    .interval_min = 12,  // 15ms (12 * 1.25)
+    .interval_max = 24,  // 30ms (24 * 1.25)
+    .latency = 29,       // 允许忽略29个心跳包
+    .timeout = 300,      // 超时 3000ms (300 * 10ms)
+};
+
 /* 蓝牙连接回调 */
 static void connected(struct bt_conn *conn, uint8_t err)
 {
@@ -420,8 +426,21 @@ static void connected(struct bt_conn *conn, uint8_t err)
     printk("Connected %s\n", addr);
 
     if (bt_conn_set_security(conn, BT_SECURITY_L2)) {
-        printk("Failed to set security\n");
+        printk("Failed to set security.\n");
+    } else {
+        printk("Set security Successed.\n");
     }
+
+    /* 防止 GATT 超时 断开
+     * https://aistudio.google.com/prompts/1GJsbMHOL_QnUtfOqwx9DFhbDy58Q81Nv
+     */
+    if (bt_conn_le_param_update(conn, &param)) {
+        printk("Conn param update failed (err %d).\n", err);
+    } else {
+        printk("Conn param update requested!\n");
+    }
+
+    return;
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -575,7 +594,7 @@ static void __swap_addr(uint8_t *a)
 static void set_public_addr(void)
 {
     // bt_addr_le_t addr = {BT_ADDR_LE_RANDOM, {{0xF4, 0x72, 0x57, 0x54, 0xCC, 0x6E}}};
-    bt_addr_le_t addr = {BT_ADDR_LE_RANDOM, {{0xF4, 0x72, 0x57, 0x12, 0x8C, 0xA6}}};
+    bt_addr_le_t addr = {BT_ADDR_LE_RANDOM, {{0xF4, 0x72, 0x57, 0x66, 0x66, 0x66}}};
 
 	__swap_addr(addr.a.val);
 
