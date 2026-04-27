@@ -1,3 +1,10 @@
+#include <string.h>
+#include <stdlib.h>
+
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+
+#include "wscli.h"
 #include "rpc_route.h"
 
 
@@ -80,22 +87,31 @@ int get_k_idx(struct parameter *paras, size_t num_paras, const char *key)
     return -1;
 }
 
-void func_start_ble_adv(FUNC_ARGS_LIST)
+void func_ble_adv(FUNC_ARGS_LIST)
 {
     /*
         {"k":"duration", "v":"100"},
-        {"k":"op", "v":"start"}
+        {"k":"op", "v":"start"},
+        {"k":"mode", "v":"normal"} // normal / wakeup
     */
 
-    // 1. 打印调试信息
     DEBUG_PRINT_PARAMS;
 
-    // 2. 获取必填参数 (找不到会自动 return)
-    GET_PARAM_REQUIRED(duration_str, "duration");
     GET_PARAM_REQUIRED(op_str, "op");
 
-    // 3. 执行业务逻辑
-    printk("duration:%s, op:%s\n", duration_str, op_str);
+    if (0 == strncmp(op_str, "start", 5)) {
+        GET_PARAM_REQUIRED(duration_str, "duration");
+        GET_PARAM_REQUIRED(mode_str, "mode");
+        printk("start ble adv duration:%s, op:%s, mode:%s\n", duration_str, op_str, mode_str);
+        bool isWakeup = false;
+        if (0 == strncmp(mode_str, "wakeup", 6)) {
+            isWakeup = true;
+        }
+        try_advertising_start(isWakeup, atoi(duration_str));
+    } else if (0 == strncmp(op_str, "stop", 5)) {
+        printk("stop ble adv\n");
+        advertising_stop();
+    }
 }
 
 
@@ -105,7 +121,7 @@ struct rpc_route {
 };
 
 static const struct rpc_route routes[] = {
-    {"ble_adv", func_start_ble_adv},
+    {"ble_adv", func_ble_adv},
     // {"set_wifi",      handle_set_wifi},
 };
 

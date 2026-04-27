@@ -13,6 +13,8 @@ ssize_t wscli_send(int sock, const void *buf, size_t len);
 void wscli_ping(int ws_sock);
 
 int ble_rc_init(void);
+int try_advertising_start(bool isWakeup, int time_s);
+int advertising_stop(void);
 
 enum {
     EVT_BASE = 0x1000,

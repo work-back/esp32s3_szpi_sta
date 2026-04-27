@@ -373,7 +373,7 @@ static void advertising_start(void)
     k_work_submit(&adv_work);
 }
 
-static int advertising_stop(void)
+int advertising_stop(void)
 {
     int err = -1;
     if (!is_adv_running) {
@@ -516,8 +516,10 @@ SHELL_CMD_REGISTER(send, NULL, "Send keycode: send <hex>\n\r"
 
 struct k_work_delayable adv_mode_switch_work;
 
-static int try_advertising_start(int time_s)
+int try_advertising_start(bool isWakeup, int time_s)
 {
+    g_wakeup_adv_mode = isWakeup;
+
     advertising_stop();
 
     k_sleep(K_MSEC(100));
@@ -540,9 +542,7 @@ static int cmd_start_adv(const struct shell *sh, size_t argc, char **argv)
         continue_time_s = atoi(argv[1]);
     }
 
-    g_wakeup_adv_mode = false;
-
-    try_advertising_start(continue_time_s);
+    try_advertising_start(false, continue_time_s);
 
     return 0;
 }
@@ -559,7 +559,7 @@ static int cmd_wakeup(const struct shell *sh, size_t argc, char **argv)
 
     g_wakeup_adv_mode = true;
 
-    try_advertising_start(continue_time_s);
+    try_advertising_start(true, continue_time_s);
 
     return 0;
 }
