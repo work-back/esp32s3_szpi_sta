@@ -210,7 +210,7 @@ static int poll_loop(void)
 	if (_fds[POLLFD_T_SOCKET].revents & POLLIN) {
 		int r_len = wscli_recv(_fds[POLLFD_T_SOCKET].fd, recv_buf, sizeof(recv_buf));
         if (r_len < 0) {
-            _fds[POLLFD_T_SOCKET].fd = -1;
+            g_fds[POLLFD_T_SOCKET].fd = -1;
             return 0;
         }
         LOG_DBG("receive [%s]", recv_buf);
