@@ -106,6 +106,32 @@ ssize_t wscli_send(int sock, const void *buf, size_t len)
 	return send(sock, buf, len, 0);
 }
 
+void wscli_ping(int ws_sock) 
+{
+	if (ws_sock < 0) {
+		LOG_ERR("ws_sock is invalid.");
+		return;
+	}
+
+    // Ping 帧可以不带数据，也可以带少量数据（比如时间戳，服务端会在 Pong 中原样返回）
+    // 这里演示不带数据的纯 Ping 帧
+    int ret = websocket_send_msg(
+        ws_sock, 
+        NULL,                       // payload (无数据传 NULL)
+        0,                          // payload_len (长度 0)
+        WEBSOCKET_OPCODE_PING,      // 关键！指定发送 PING 帧
+        true,                       // mask (客户端发送给服务端必须为 true)
+        true,                       // final (控制帧必须是 final 帧，传 true)
+        SYS_FOREVER_MS                 // 超时时间，比如 1000ms
+    );
+
+    if (ret < 0) {
+        LOG_ERR("Failed to send WebSocket PING: %d", ret);
+    } else {
+        LOG_DBG("WebSocket PING sent successfully!");
+    }
+}
+
 int wscli_recv(int sock, uint8_t *buf, size_t buf_len)
 {
 	int ret, read_pos;
@@ -121,6 +147,7 @@ int wscli_recv(int sock, uint8_t *buf, size_t buf_len)
 			}
 
 			LOG_DBG("connection closed while waiting (%d/%d)", ret, errno);
+			read_pos = -1;
 			break;
 		}
 

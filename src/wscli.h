@@ -10,6 +10,7 @@ int wscli_fini(void);
 int wscli_getsock(void);
 int wscli_recv(int sock, uint8_t *buf, size_t buf_len);
 ssize_t wscli_send(int sock, const void *buf, size_t len);
+void wscli_ping(int ws_sock);
 
 int ble_rc_init(void);
 

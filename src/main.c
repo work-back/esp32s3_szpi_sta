@@ -90,7 +90,10 @@ void evt_handle(void)
 
         if (msg) {
             if (msg->type == EVT_TIMER_OUT) {
-                send_msg(g_fds[POLLFD_T_SOCKET].fd, send_buf, sizeof(send_buf));
+                // send_msg(g_fds[POLLFD_T_SOCKET].fd, send_buf, sizeof(send_buf));
+                if (g_fds[POLLFD_T_SOCKET].fd > 0) {
+                    wscli_ping(g_fds[POLLFD_T_SOCKET].fd);
+                }
             } else if (msg->type == EVT_WIFI_STA_START) {
                 int wait_ret = sta_tryconnect();
                 if (wait_ret != 0) {
@@ -134,7 +137,7 @@ static void timer_looper_thrd(void)
     LOG_INF("timer_looper_thrd start ...");
 
     while(1) {
-        k_sleep(K_SECONDS(1));
+        k_sleep(K_SECONDS(10));
 
         evt_send(EVT_TIMER_OUT, 0, NULL);
 
@@ -206,6 +209,10 @@ static int poll_loop(void)
 
 	if (_fds[POLLFD_T_SOCKET].revents & POLLIN) {
 		int r_len = wscli_recv(_fds[POLLFD_T_SOCKET].fd, recv_buf, sizeof(recv_buf));
+        if (r_len < 0) {
+            _fds[POLLFD_T_SOCKET].fd = -1;
+            return 0;
+        }
         LOG_DBG("receive [%s]", recv_buf);
         ws_msg_handle(recv_buf, r_len);
 	}
