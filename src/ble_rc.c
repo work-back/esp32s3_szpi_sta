@@ -2,15 +2,21 @@
 #include <stdlib.h>
 
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+
+#include <zephyr/kernel.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/uuid.h>
+#include <zephyr/bluetooth/conn.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/bluetooth/controller.h>
 
 #include "wscli.h"
+
+LOG_MODULE_REGISTER(BLERC, LOG_LEVEL_DBG);
 
 enum {
     HIDS_REMOTE_WAKE = BIT(0),
@@ -457,9 +463,19 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
     advertising_start();
 }
 
+static void security_changed_cb(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
+{
+	if (err == 0) {
+		LOG_INF("Set security Successed! level: %s(%u)", bt_security_err_to_str(err), err);
+	} else {
+		LOG_ERR("Failed to set security level: %s(%u)", bt_security_err_to_str(err), err);
+	}
+}
+
 BT_CONN_CB_DEFINE(conn_callbacks) = {
     .connected = connected,
     .disconnected = disconnected,
+    .security_changed = security_changed_cb,
 };
 
 static struct bt_gatt_attr *report_decl = NULL;
