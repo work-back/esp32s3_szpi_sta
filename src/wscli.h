@@ -30,4 +30,6 @@ int evt_send(unsigned int type, unsigned int len, void *data);
 
 void rpc_execute(char *json_str, size_t json_str_len);
 
+int build_action_hello(char *buf, int buf_len);
+
 #endif //__WS_CLI_H__

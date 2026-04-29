@@ -40,8 +40,8 @@ enum {
 static struct pollfd g_fds[__POLLFD_T_MAX__];
 
 static void timer_looper_thrd(void);
-static bool send_msg(int sock, uint8_t *buf, size_t buf_len);
-static void try_connect_ws(void);
+static bool send_msg_to_ws(uint8_t *buf, size_t buf_len);
+static int try_connect_ws(void);
 
 #if defined(CONFIG_NET_TC_THREAD_PREEMPTIVE)
 #define THREAD_PRIORITY K_PRIO_PREEMPT(8)
@@ -101,7 +101,18 @@ void evt_handle(void)
                 }
             } else if (msg->type == EVT_WIFI_CONNECTED) {
                 LOG_INF("WiFi connected, starting WSCLI...");
-                try_connect_ws();
+                if (try_connect_ws()) {
+                    LOG_ERR("ws connect failed.");
+                    continue;
+                }
+
+                char json_buf[128] = {0};
+                int j_len = build_action_hello(json_buf, sizeof(json_buf));
+                if (j_len < 0) {
+                    LOG_ERR("build_action_hello failed.");
+                    continue;
+                }
+                send_msg_to_ws(json_buf, j_len);
 
                 // k_thread_start(timer_thread_id);
 
@@ -147,7 +158,7 @@ static void timer_looper_thrd(void)
     return;
 }
 
-static void try_connect_ws(void)
+static int try_connect_ws(void)
 {
 	wscli_init();
 
@@ -160,7 +171,7 @@ static void try_connect_ws(void)
     g_fds[POLLFD_T_SOCKET].fd = websock;
     g_fds[POLLFD_T_SOCKET].events = POLLIN;
 
-    return;
+    return 0;
 }
 
 static void ws_msg_handle(char *msg, int len)
@@ -231,17 +242,16 @@ static int poll_loop(void)
 	return 0;
 }
 
-static bool send_msg(int sock, uint8_t *buf, size_t buf_len)
+static bool send_msg_to_ws(uint8_t *data, size_t data_len)
 {
 	int ret;
 
-	if (sock < 0) {
-		return true;
+	if (g_fds[POLLFD_T_SOCKET].fd < 0) {
+        LOG_ERR("ws sock is invalid.");
+		return false;
 	}
 
-	ret = snprintf(buf, buf_len, "%s", "hello SRV");;
-
-	ret = wscli_send(sock, buf, ret);
+	ret = wscli_send(g_fds[POLLFD_T_SOCKET].fd, data, data_len);
 	if (ret <= 0) {
 		if (ret < 0) {
 			LOG_ERR("failed to send data using %s (%d)", "ws API", ret);
