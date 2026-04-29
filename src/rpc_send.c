@@ -47,6 +47,24 @@ static int payload_paras_add(struct msg_payload *payload_p, const char *k, const
     return 0;
 }
 
+int payload_to_josn_str(struct msg_payload *payload_p, char *buf, int buf_len)
+{
+    memset(buf, 0, buf_len);
+
+    ssize_t ret = json_obj_encode_buf(msg_payload_descr,
+                                      ARRAY_SIZE(msg_payload_descr),
+                                      payload_p,
+                                      buf,
+                                      buf_len - 1);
+
+    if (ret < 0) {
+        printk("JSON encode failed, ret: %zd\n", ret);
+        return -1;
+    }
+
+    return strlen(buf);
+}
+
 int build_action_hello(char *buf, int buf_len)
 {
     struct msg_payload payload = {0};
@@ -61,18 +79,35 @@ int build_action_hello(char *buf, int buf_len)
     // payload_paras_add(&payload, "action", "hello");
     payload_paras_add(&payload, "mac", "11:22:33:44:55:66");
     
-    ssize_t ret = json_obj_encode_buf(msg_payload_descr, 
-                                      ARRAY_SIZE(msg_payload_descr),
-                                      &payload, 
-                                      buf, 
-                                      buf_len);
-
+    ssize_t ret = payload_to_josn_str(&payload, buf, buf_len);
     if (ret < 0) {
         printk("JSON encode failed, ret: %zd\n", ret);
         return -1;
     }
 
-    ret = strlen(buf);
+    printk("JSON encoded:[%d]:\n%s\n", ret, buf);
+
+    return ret;
+}
+
+int build_status_ble_ready(char *buf, int buf_len)
+{
+    struct msg_payload payload = {0};
+
+    if (!buf || !buf_len) {
+        return -1;
+    }
+    
+    payload.func = "status";
+    payload.num_paras = 0; /* 初始数组为空 */
+
+    payload_paras_add(&payload, "state", "ble_ready");
+    
+    ssize_t ret = payload_to_josn_str(&payload, buf, buf_len);
+    if (ret < 0) {
+        printk("JSON encode failed, ret: %zd\n", ret);
+        return -1;
+    }
 
     printk("JSON encoded:[%d]:\n%s\n", ret, buf);
 

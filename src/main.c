@@ -117,6 +117,13 @@ void evt_handle(void)
                 // k_thread_start(timer_thread_id);
 
                 ble_rc_init();
+
+                build_status_ble_ready(json_buf, sizeof(json_buf));
+                if (j_len < 0) {
+                    LOG_ERR("build_action_hello failed.");
+                    continue;
+                }
+                send_msg_to_ws(json_buf, j_len);
             }
         }
 
