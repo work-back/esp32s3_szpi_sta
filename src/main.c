@@ -100,6 +100,7 @@ void evt_handle(void)
                     LOG_ERR("WiFi connection failed.");
                 }
             } else if (msg->type == EVT_WIFI_CONNECTED) {
+                #if 0
                 LOG_INF("WiFi connected, starting WSCLI...");
                 if (try_connect_ws()) {
                     LOG_ERR("ws connect failed.");
@@ -113,17 +114,20 @@ void evt_handle(void)
                     continue;
                 }
                 send_msg_to_ws(json_buf, j_len);
+                #endif
 
                 // k_thread_start(timer_thread_id);
 
                 ble_rc_init();
 
+                #if 0
                 build_status_ble_ready(json_buf, sizeof(json_buf));
                 if (j_len < 0) {
                     LOG_ERR("build_action_hello failed.");
                     continue;
                 }
                 send_msg_to_ws(json_buf, j_len);
+                #endif
             }
         }
 

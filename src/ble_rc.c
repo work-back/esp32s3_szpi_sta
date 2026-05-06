@@ -239,9 +239,9 @@ static const struct bt_data ad_wakeup[] = {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
     BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x80, 0x01),
     BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL)),
-	// BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 2),
+	BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 2),
 	// BT_DATA(0xfe, fe_data, 3),
-	BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
+	// BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
 };
 
 /* GATT 属性定义 */
@@ -332,17 +332,22 @@ static void advertising_continue(void)
             return;
         }
 
-        adv_param = *BT_LE_ADV_CONN_FAST_1;
-        adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
-        if (g_id >= 0) {
-            printk("Use mac form g_id!\n");
-            adv_param.id = g_id;
-        }
-
         if (g_wakeup_adv_mode == false) {
+            adv_param = *BT_LE_ADV_CONN_FAST_1;
+            adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
+            if (g_id >= 0) {
+                printk("Use mac form g_id!\n");
+                adv_param.id = g_id;
+            }
             printk("Wait Pair advertising start ...\n");
             err = bt_le_adv_start(&adv_param, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
         } else {
+            adv_param = *BT_LE_ADV_NCONN;
+            adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
+            if (g_id >= 0) {
+                printk("Use mac form g_id!\n");
+                adv_param.id = g_id;
+            }
             printk("Wakeup advertising start ...\n");
             err = bt_le_adv_start(&adv_param, ad_wakeup, ARRAY_SIZE(ad_wakeup), sd, ARRAY_SIZE(sd));
         }
@@ -492,12 +497,8 @@ static inline struct bt_gatt_attr * get_attrs(void)
     return report_decl + 1;
 }
 
-static int cmd_send_key(const struct shell *sh, size_t argc, char **argv)
+static int do_send_key(uint8_t key)
 {
-    if (argc < 2) return -EINVAL;
-
-    uint8_t key = (uint8_t)strtol(argv[1], NULL, 16);
-
     struct bt_gatt_attr * rpt_val_att = get_attrs();
     if (!report_decl) {
         printk("Error: HID Report Characteristic not found\n");
@@ -517,6 +518,17 @@ static int cmd_send_key(const struct shell *sh, size_t argc, char **argv)
     //bt_gatt_notify(NULL, rpt_val_att, report_val, 8);
     bt_gatt_notify(NULL, &hid_svc.attrs[6], report_val, sizeof(report_val));
 
+    return 0;
+}
+
+static int cmd_send_key(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 2) return -EINVAL;
+
+    uint8_t key = (uint8_t)strtol(argv[1], NULL, 16);
+
+    do_send_key(key);
+
     shell_print(sh, "Sent keycode 0x%02x", key);
 
     return 0;
@@ -529,6 +541,71 @@ SHELL_CMD_REGISTER(send, NULL, "Send keycode: send <hex>\n\r"
                                 "- Return: 0xf1\n\r"
                                 "- Power:  0x66\n\r"
                     , cmd_send_key);
+
+#if defined(CONFIG_NET_TC_THREAD_PREEMPTIVE)
+#define THREAD_PRIORITY K_PRIO_PREEMPT(8)
+#else
+#define THREAD_PRIORITY K_PRIO_COOP(CONFIG_NUM_COOP_PRIORITIES - 1)
+#endif
+#define BT_CK_STACK_SIZE 2048
+
+static volatile bool g_bt_ck_running = false;
+
+static void bt_ck_k_sleep(int time_s)
+{
+    do {
+        k_sleep(K_SECONDS(1));
+        printk("bt_ck_k_sleep [%d]\n", time_s);
+    } while(time_s-- && g_bt_ck_running);
+}
+
+static void bt_ck_looper_thrd(void)
+{
+    LOG_INF("bt_ck_looper_thrd start ...");
+    g_bt_ck_running = true;
+
+    while(g_bt_ck_running) {
+        printk("--> Power\n");
+        do_send_key(0x66);
+        bt_ck_k_sleep(1); if (!g_bt_ck_running) break;
+        printk("--> Power\n");
+        do_send_key(0x66);
+
+        bt_ck_k_sleep(60); if (!g_bt_ck_running) break;
+        
+        printk("--> wakeup_adv_mode\n");
+        g_wakeup_adv_mode = true;
+        try_advertising_start(true, 10);
+
+        bt_ck_k_sleep(60); if (!g_bt_ck_running) break;
+
+    }
+
+    return;
+}
+
+K_THREAD_DEFINE(bt_ck_thread_id, BT_CK_STACK_SIZE,
+		bt_ck_looper_thrd, NULL, NULL, NULL,
+		THREAD_PRIORITY,
+		IS_ENABLED(CONFIG_USERSPACE) ? K_USER : 0, -1);
+
+static int cmd_auto_reboot_start(const struct shell *sh, size_t argc, char **argv)
+{
+    k_thread_start(bt_ck_thread_id);
+
+    return 0;
+}
+
+static int cmd_auto_reboot_stop(const struct shell *sh, size_t argc, char **argv)
+{
+    g_bt_ck_running = false;
+
+    return 0;
+}
+
+SHELL_CMD_REGISTER(auto_reboot_start, NULL, "auto_reboot_start\n\r" , cmd_auto_reboot_start);
+SHELL_CMD_REGISTER(auto_reboot_stop, NULL, "auto_reboot_stop\n\r" , cmd_auto_reboot_stop);
+
 
 struct k_work_delayable adv_mode_switch_work;
 
