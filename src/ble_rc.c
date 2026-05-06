@@ -237,7 +237,8 @@ static const struct bt_data sd[] = {
 };
 
 static uint8_t mfg_data[] = { 0x00, 0x01 };
-static uint8_t fe_data[] = { 0x52, 0xDC, 0x17 }; // C8:26:E2:17:DC:52
+// static uint8_t fe_data[] = { 0x52, 0xDC, 0x17 }; // C8:26:E2:17:DC:52
+static uint8_t fe_data[] = { 0x57, 0x11, 0x30 }; // A8:A0:92:30:11:57
 static uint8_t uuid_data[] = { 0x00, 0x01, 0x02, 0x01, 0x05, 0x03, 0xff, 0x00, 0x01,
                                0xC8, 0x26, 0xE2, 0x17, 0xDC, 0x52,
                                // 0xA8, 0xA0, 0x92, 0x30, 0x11, 0x57,
@@ -584,13 +585,13 @@ static void bt_ck_looper_thrd(void)
         printk("--> Power\n");
         do_send_key(0x66);
 
-        bt_ck_k_sleep(60); if (!g_bt_ck_running) break;
+        bt_ck_k_sleep(120); if (!g_bt_ck_running) break;
         
         printk("--> wakeup_adv_mode\n");
         g_wakeup_adv_mode = true;
         try_advertising_start(true, 20);
 
-        bt_ck_k_sleep(60); if (!g_bt_ck_running) break;
+        bt_ck_k_sleep(120); if (!g_bt_ck_running) break;
 
     }
 
