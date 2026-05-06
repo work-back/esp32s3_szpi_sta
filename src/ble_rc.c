@@ -351,6 +351,8 @@ static void advertising_continue(void)
         } else {
             adv_param = *BT_LE_ADV_NCONN;
             adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
+            // adv_param = *BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_IDENTITY, BT_GAP_ADV_FAST_INT_MIN_2, \
+			// 		BT_GAP_ADV_FAST_INT_MAX_2, NULL)
             if (g_id >= 0) {
                 printk("Use mac form g_id!\n");
                 adv_param.id = g_id;
