@@ -19,6 +19,13 @@
 LOG_MODULE_REGISTER(BLERC, LOG_LEVEL_DBG);
 
 enum {
+    BTRC_ST_DISCONNECTE = 0,
+    BTRC_ST_CONNECTED,
+};
+
+static volatile int g_btrc_st = BTRC_ST_DISCONNECTE;
+
+enum {
     HIDS_REMOTE_WAKE = BIT(0),
     HIDS_NORMALLY_CONNECTABLE = BIT(1),
 };
@@ -240,7 +247,7 @@ static const struct bt_data ad_wakeup[] = {
     BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x80, 0x01),
     BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL)),
 	BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 2),
-	// BT_DATA(0xfe, fe_data, 3),
+	BT_DATA(0xfe, fe_data, 3),
 	// BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
 };
 
@@ -453,6 +460,8 @@ static void connected(struct bt_conn *conn, uint8_t err)
     }
     #endif
 
+    g_btrc_st = BTRC_ST_CONNECTED;
+
     return;
 }
 
@@ -466,6 +475,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
            reason, bt_hci_err_to_str(reason));
 
     advertising_start();
+
+    g_btrc_st = BTRC_ST_DISCONNECTE;
 }
 
 static void security_changed_cb(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
@@ -575,7 +586,7 @@ static void bt_ck_looper_thrd(void)
         
         printk("--> wakeup_adv_mode\n");
         g_wakeup_adv_mode = true;
-        try_advertising_start(true, 10);
+        try_advertising_start(true, 20);
 
         bt_ck_k_sleep(60); if (!g_bt_ck_running) break;
 
@@ -670,7 +681,10 @@ void adv_mode_switch_handler(struct k_work *work)
     k_sleep(K_MSEC(100));
 
     g_wakeup_adv_mode = false;
-    // advertising_start();
+
+    if (g_btrc_st == BTRC_ST_DISCONNECTE) {
+        advertising_start();
+    }
 }
 
 static void __swap_addr(uint8_t *a)
