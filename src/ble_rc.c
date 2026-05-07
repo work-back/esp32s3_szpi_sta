@@ -287,13 +287,23 @@ BT_GATT_SERVICE_DEFINE(hid_svc,
                            NULL, write_ctrl_point, &ctrl_point),
 );
 
+
+static bt_addr_le_t g_rc_last_paired_addr;
+#define RC_LAST_PAIRED_ADDR (&g_rc_last_paired_addr)
+
+#define RC_LAST_PAIRED_ADDR_SET_NONE    bt_addr_le_copy(RC_LAST_PAIRED_ADDR, BT_ADDR_LE_NONE)
+#define RC_LAST_PAIRED_ADDR_SET(p_addr) bt_addr_le_copy(RC_LAST_PAIRED_ADDR, (p_addr))
+#define RC_LAST_PAIRED_ADDR_IS_NONE     bt_addr_le_eq(RC_LAST_PAIRED_ADDR, BT_ADDR_LE_NONE)
+
 static void bond_find(const struct bt_bond_info *info, void *user_data)
 {
     // printk("bond_find type:%d mac:["MAC_FMT"]\n", dst->type, dst->a.val);
 
     char _t[64];
     bt_addr_le_to_str(&(info->addr), _t, sizeof(_t));
-    printk("bond_find [%s]", _t);
+    printk("bond_find [%s]\n", _t);
+
+    RC_LAST_PAIRED_ADDR_SET(&(info->addr));
 
     return;
 }
@@ -302,89 +312,69 @@ static void advertising_continue(void)
 {
     struct bt_le_adv_param adv_param;
 
-#if CONFIG_BT_DIRECTED_ADVERTISING
-    bt_addr_le_t addr;
+    int err;
 
-    if (!k_msgq_get(&bonds_queue, &addr, K_NO_WAIT)) {
-        char addr_buf[BT_ADDR_LE_STR_LEN];
-        int err;
+    if (is_adv_running) {
+        return;
+    }
 
-        if (is_adv_running) {
-            err = bt_le_adv_stop();
-            if (err) {
-                printk("Advertising failed to stop (err %d)\n", err);
-                return;
-            }
-            is_adv_running = false;
-        }
-
-        adv_param = *BT_LE_ADV_CONN_DIR(&addr);
-        adv_param.options |= BT_LE_ADV_OPT_DIR_ADDR_RPA;
-
-
-        err = bt_le_adv_start(&adv_param, NULL, 0, NULL, 0);
-
-        if (err) {
-            printk("Directed advertising failed to start (err %d)\n", err);
-            return;
-        }
-
-        bt_addr_le_to_str(&addr, addr_buf, BT_ADDR_LE_STR_LEN);
-        printk("Direct advertising to %s started\n", addr_buf);
-    } else
-#endif
-    {
-        int err;
-
-        if (is_adv_running) {
-            return;
-        }
-
-        if (g_wakeup_adv_mode == false) {
+    if (g_wakeup_adv_mode == false) {
+        if (RC_LAST_PAIRED_ADDR_IS_NONE) {
             adv_param = *BT_LE_ADV_CONN_FAST_1;
             adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
             if (g_id >= 0) {
                 printk("Use mac form g_id!\n");
                 adv_param.id = g_id;
             }
+
             printk("Wait Pair advertising start ...\n");
             err = bt_le_adv_start(&adv_param, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
         } else {
-            adv_param = *BT_LE_ADV_NCONN;
+            adv_param = *BT_LE_ADV_CONN_DIR(RC_LAST_PAIRED_ADDR);
             adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
-            // adv_param = *BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_IDENTITY, BT_GAP_ADV_FAST_INT_MIN_2, \
-			// 		BT_GAP_ADV_FAST_INT_MAX_2, NULL)
             if (g_id >= 0) {
                 printk("Use mac form g_id!\n");
                 adv_param.id = g_id;
             }
-            printk("Wakeup advertising start ...\n");
-            err = bt_le_adv_start(&adv_param, ad_wakeup, ARRAY_SIZE(ad_wakeup), sd, ARRAY_SIZE(sd));
+
+            char addr_buf[BT_ADDR_LE_STR_LEN];
+            bt_addr_le_to_str(RC_LAST_PAIRED_ADDR, addr_buf, BT_ADDR_LE_STR_LEN);
+            printk("Direct advertising to %s started\n", addr_buf);
+
+            err = bt_le_adv_start(&adv_param, NULL, 0, NULL, 0);
         }
 
-        if (err) {
-            printk("Advertising failed to start (err %d)\n", err);
-            return;
+    } else {
+        adv_param = *BT_LE_ADV_NCONN;
+        adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
+        // adv_param = *BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_IDENTITY, BT_GAP_ADV_FAST_INT_MIN_2, \
+        // 		BT_GAP_ADV_FAST_INT_MAX_2, NULL)
+        if (g_id >= 0) {
+            printk("Use mac form g_id!\n");
+            adv_param.id = g_id;
         }
-
-        printk("Regular advertising started [%s]\n", g_wakeup_adv_mode ? "Wakeup adv" : "Pair adv");
+        printk("Wakeup advertising start ...\n");
+        err = bt_le_adv_start(&adv_param, ad_wakeup, ARRAY_SIZE(ad_wakeup), sd, ARRAY_SIZE(sd));
     }
+
+    if (err) {
+        printk("Advertising failed to start (err %d)\n", err);
+        return;
+    }
+
+    printk("Regular advertising started [%s]\n", g_wakeup_adv_mode ? "Wakeup adv" : "Pair adv");
 
     is_adv_running = true;
 }
 
 static void advertising_start(void)
 {
-#if CONFIG_BT_DIRECTED_ADVERTISING
-    k_msgq_purge(&bonds_queue);
-    bt_foreach_bond(BT_ID_DEFAULT, bond_find, NULL);
-#else
+    RC_LAST_PAIRED_ADDR_SET_NONE;
     if (g_id < 0) {
         bt_foreach_bond(BT_ID_DEFAULT, bond_find, NULL);
     } else {
         bt_foreach_bond(g_id, bond_find, NULL);
     }
-#endif
 
     if (is_adv_running) {
         printk("Advertising is alreay started, skip.\n");
@@ -755,6 +745,8 @@ int ble_rc_init(void)
     int err;
 
     printk("BLE RC INIT start ...\n");
+
+    RC_LAST_PAIRED_ADDR_SET_NONE;
 
     fix_uuid_data();
     set_public_addr();
