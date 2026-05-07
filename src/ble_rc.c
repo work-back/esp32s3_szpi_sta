@@ -562,6 +562,7 @@ SHELL_CMD_REGISTER(send, NULL, "Send keycode: send <hex>\n\r"
 #define THREAD_PRIORITY K_PRIO_COOP(CONFIG_NUM_COOP_PRIORITIES - 1)
 #endif
 #define BT_CK_STACK_SIZE 2048
+K_SEM_DEFINE(bt_ck_run_sem, 0, 1); // 定义一个初始值为0的信号量
 
 static volatile bool g_bt_ck_running = false;
 
@@ -573,9 +574,8 @@ static void bt_ck_k_sleep(int time_s)
     } while(time_s-- && g_bt_ck_running);
 }
 
-static void bt_ck_looper_thrd(void)
+static void _bt_ck_looper(void)
 {
-    LOG_INF("bt_ck_looper_thrd start ...");
     g_bt_ck_running = true;
 
     while(g_bt_ck_running) {
@@ -598,6 +598,24 @@ static void bt_ck_looper_thrd(void)
     return;
 }
 
+static void bt_ck_looper_thrd(void)
+{
+    LOG_INF("bt_ck_looper_thrd start ...");
+    
+    while(1) {
+         k_sem_take(&bt_ck_run_sem, K_FOREVER);
+
+         LOG_INF("bt_ck_looper start ++++++");
+        _bt_ck_looper();
+         LOG_INF("bt_ck_looper Stop ++++++");
+
+    }
+
+    LOG_INF("bt_ck_looper_thrd exit ...");
+
+    return;
+}
+
 K_THREAD_DEFINE(bt_ck_thread_id, BT_CK_STACK_SIZE,
 		bt_ck_looper_thrd, NULL, NULL, NULL,
 		THREAD_PRIORITY,
@@ -605,7 +623,8 @@ K_THREAD_DEFINE(bt_ck_thread_id, BT_CK_STACK_SIZE,
 
 static int cmd_auto_reboot_start(const struct shell *sh, size_t argc, char **argv)
 {
-    k_thread_start(bt_ck_thread_id);
+    // k_thread_start(bt_ck_thread_id);
+    k_sem_give(&bt_ck_run_sem);
 
     return 0;
 }
@@ -756,6 +775,8 @@ int ble_rc_init(void)
     if (IS_ENABLED(CONFIG_SETTINGS)) {
         settings_load();
     }
+
+    k_thread_start(bt_ck_thread_id);
 
     return 0;
 }
