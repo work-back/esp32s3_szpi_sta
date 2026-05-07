@@ -237,7 +237,6 @@ static const struct bt_data sd[] = {
 };
 
 static uint8_t mfg_data[] = { 0x00, 0x01 };
-// static uint8_t fe_data[] = { 0x52, 0xDC, 0x17 }; // C8:26:E2:17:DC:52
 static uint8_t fe_data[] = { 0x57, 0x11, 0x30 }; // A8:A0:92:30:11:57
 static uint8_t uuid_data[] = { 0x00, 0x01, 0x02, 0x01, 0x05, 0x03, 0xff, 0x00, 0x01,
                                0xC8, 0x26, 0xE2, 0x17, 0xDC, 0x52,
@@ -414,6 +413,16 @@ struct bt_le_conn_param param = {
     .timeout = 300,      // 超时 3000ms (300 * 10ms)
 };
 
+static void update_fe_data(bt_addr_le_t *dst_addr)
+{
+    if (!update_fe_data) {
+        return;
+    }
+    fe_data[0] = dst_addr->a.val[0];
+    fe_data[1] = dst_addr->a.val[1];
+    fe_data[2] = dst_addr->a.val[2];
+}
+
 /* 蓝牙连接回调 */
 static void connected(struct bt_conn *conn, uint8_t err)
 {
@@ -421,7 +430,14 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
     is_adv_running = false;
 
-    bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+    bt_addr_le_t *dst_addr = bt_conn_get_dst(conn);
+    if (dst_addr) {
+        update_fe_data(dst_addr);
+        bt_addr_le_to_str(dst_addr, addr, sizeof(addr));
+    } else {
+        snprintf(addr, BT_ADDR_LE_STR_LEN, "%s", "unkown");
+    }
+
 
     if (err) {
         if (err == BT_HCI_ERR_ADV_TIMEOUT) {
