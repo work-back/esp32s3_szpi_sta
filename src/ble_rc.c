@@ -591,7 +591,7 @@ static void _bt_ck_looper(void)
         printk("--> Power\n");
         do_send_key(0x66);
 
-        bt_ck_k_sleep(120); if (!g_bt_ck_running) break;
+        bt_ck_k_sleep(30); if (!g_bt_ck_running) break;
         
         printk("--> wakeup_adv_mode\n");
         g_wakeup_adv_mode = true;
