@@ -251,8 +251,9 @@ static const struct bt_data ad_wakeup[] = {
 	// BT_DATA(0x07, uuid_data, 16), // xiaomi Speaker wakeup
 };
 
-/* GATT 属性定义 */
 static uint8_t report_val[8]; // 键盘报告数据缓冲区
+
+/* GATT 属性定义 */
 BT_GATT_SERVICE_DEFINE(hid_svc,
     BT_GATT_PRIMARY_SERVICE(BT_UUID_HIDS),
 
