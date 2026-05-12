@@ -484,6 +484,17 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
     printk("Disconnected from %s, reason 0x%02x %s\n", addr,
            reason, bt_hci_err_to_str(reason));
 
+    if (reason == BT_HCI_ERR_REMOTE_USER_TERM_CONN) {
+        LOG_INF("Remote user terminated connection. Deleting bond...");
+        RC_LAST_PAIRED_ADDR_SET_NONE;
+        int err = bt_unpair((g_id < 0 ? BT_ID_DEFAULT : g_id), bt_conn_get_dst(conn));
+        if (err) {
+            LOG_ERR("Failed to delete bond (err %d) for %s", err, addr);
+        } else {
+            LOG_INF("Bond deleted successfully for %s", addr);
+        }
+    }
+
     advertising_start();
 
     g_btrc_st = BTRC_ST_DISCONNECTE;
