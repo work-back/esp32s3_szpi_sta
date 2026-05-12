@@ -197,19 +197,19 @@ static int poll_loop(void)
 	int ret;
     int fd_n = 0;
 
-    struct pollfd _fds[__POLLFD_T_MAX__];
+    struct pollfd p_fds[__POLLFD_T_MAX__];
 
     for (int i = 0; i < __POLLFD_T_MAX__; i++) {
         if (g_fds[i].fd >= 0) {
             // LOG_DBG("add fd[%d]:[%d] to poll.\n", i, g_fds[i].fd);
 
-            _fds[i].fd = g_fds[i].fd;
-            _fds[i].events = g_fds[i].events;
+            p_fds[fd_n].fd = g_fds[i].fd;
+            p_fds[fd_n].events = g_fds[i].events;
             fd_n++;
         }
     }
 
-	ret = poll(_fds, fd_n, 30 * 1000);
+	ret = poll(p_fds, fd_n, 30 * 1000);
 	if (ret < 0) {
 		return ret;
 	}
@@ -221,34 +221,38 @@ static int poll_loop(void)
 
     LOG_DBG("poll event GOT!");
 
-	if (_fds[POLLFD_T_SOCKET].revents & POLLNVAL) {
-		return -EBADF;
-	}
-
-	if (_fds[POLLFD_T_SOCKET].revents & POLLERR) {
-		return -EIO;
-	}
-
-	if (_fds[POLLFD_T_SOCKET].revents & POLLIN) {
-		int r_len = wscli_recv(_fds[POLLFD_T_SOCKET].fd, recv_buf, sizeof(recv_buf));
-        if (r_len < 0) {
-            g_fds[POLLFD_T_SOCKET].fd = -1;
-            return 0;
+    if (g_fds[POLLFD_T_SOCKET].fd >= 0) {
+        if (p_fds[POLLFD_T_SOCKET].revents & POLLNVAL) {
+            printk("[%s][%d] socket error:POLLNVAL\n", __func__, __LINE__);
+            return -EBADF;
         }
-        LOG_DBG("receive [%s]", recv_buf);
-        ws_msg_handle(recv_buf, r_len);
-	}
 
-	if (_fds[POLLFD_T_EVENTFD].revents) {
-		eventfd_t value;
+        if (p_fds[POLLFD_T_SOCKET].revents & POLLERR) {
+            printk("[%s][%d] socket error:POLLERR\n", __func__, __LINE__);
+            return -EIO;
+        }
 
-		eventfd_read(_fds[POLLFD_T_EVENTFD].fd, &value);
-		LOG_DBG("Received event.");
+        if (p_fds[POLLFD_T_SOCKET].revents & POLLIN) {
+            int r_len = wscli_recv(p_fds[POLLFD_T_SOCKET].fd, recv_buf, sizeof(recv_buf));
+            if (r_len < 0) {
+                g_fds[POLLFD_T_SOCKET].fd = -1;
+                return 0;
+            }
+            LOG_DBG("receive [%s]", recv_buf);
+            ws_msg_handle(recv_buf, r_len);
+        }
+    }
 
-        evt_handle();
+    if (g_fds[POLLFD_T_EVENTFD].fd >= 0) {
+        if (p_fds[POLLFD_T_EVENTFD].revents) {
+            eventfd_t value;
 
-        //send_msg(_fds[POLLFD_T_SOCKET].fd, send_buf, sizeof(send_buf));
-	}
+            eventfd_read(p_fds[POLLFD_T_EVENTFD].fd, &value);
+            LOG_DBG("Received event.");
+
+            evt_handle();
+        }
+    }
 
 	return 0;
 }

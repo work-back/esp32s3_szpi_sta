@@ -1,9 +1,9 @@
 #/bin/bash
 
 ESP_DEV=/dev/ttyACM0
-#BOARD=esp32s3_szpi/esp32s3/procpu
+BOARD=esp32s3_szpi/esp32s3/procpu
 #BOARD=esp32s3_wave/esp32s3/procpu
-BOARD=esp32c6_wave/esp32c6/hpcore
+#BOARD=esp32c6_wave/esp32c6/hpcore
 PRJ=sta
 
 build_all() {
