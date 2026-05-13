@@ -506,11 +506,11 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
     printk("Disconnected from %s, reason 0x%02x %s\n", addr,
            reason, bt_hci_err_to_str(reason));
 
-    if (reason == BT_HCI_ERR_REMOTE_USER_TERM_CONN) {
-        LOG_INF("Remote user terminated connection. Deleting bond...");
-        try_unpair(conn_dst_addr);
-        RC_LAST_PAIRED_ADDR_SET_NONE;
-    }
+    // if (reason == BT_HCI_ERR_REMOTE_USER_TERM_CONN) {
+    //     LOG_INF("Remote user terminated connection. Deleting bond...");
+    //     try_unpair(conn_dst_addr);
+    //     RC_LAST_PAIRED_ADDR_SET_NONE;
+    // }
 
     advertising_start();
 
