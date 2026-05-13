@@ -25,3 +25,9 @@ erase_and_flash_esp() {
     west flash --erase --esp-device ${ESP_DEV}
 }
 
+esp_auto() {
+    build_all
+    flash_esp
+    monitor_esp
+}
+

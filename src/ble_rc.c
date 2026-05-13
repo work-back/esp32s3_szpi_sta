@@ -435,10 +435,10 @@ static void connected(struct bt_conn *conn, uint8_t err)
     if (dst_addr) {
         update_fe_data(dst_addr);
         bt_addr_le_to_str(dst_addr, addr, sizeof(addr));
+        RC_LAST_PAIRED_ADDR_SET(dst_addr);
     } else {
         snprintf(addr, BT_ADDR_LE_STR_LEN, "%s", "unkown");
     }
-
 
     if (err) {
         if (err == BT_HCI_ERR_ADV_TIMEOUT) {
@@ -475,24 +475,41 @@ static void connected(struct bt_conn *conn, uint8_t err)
     return;
 }
 
-static void disconnected(struct bt_conn *conn, uint8_t reason)
+static void try_unpair(bt_addr_le_t *conn_dst_addr)
 {
     char addr[BT_ADDR_LE_STR_LEN];
+    bt_addr_le_to_str(conn_dst_addr, addr, sizeof(addr));
 
-    bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+    int err = bt_unpair((g_id < 0 ? BT_ID_DEFAULT : g_id), conn_dst_addr);
+    if (err) {
+        LOG_ERR("Failed to delete bond (err %d) for %s", err, addr);
+    } else {
+        LOG_INF("Bond deleted successfully for %s", addr);
+    }
+
+    return;
+}
+
+static void disconnected(struct bt_conn *conn, uint8_t reason)
+{
+    bt_addr_le_t *conn_dst_addr = NULL;
+    char addr[BT_ADDR_LE_STR_LEN];
+
+    conn_dst_addr = bt_conn_get_dst(conn);
+    if (NULL == conn_dst_addr) {
+        LOG_ERR("can not get dst le addr!");
+        return;
+    }
+
+    bt_addr_le_to_str(conn_dst_addr, addr, sizeof(addr));
 
     printk("Disconnected from %s, reason 0x%02x %s\n", addr,
            reason, bt_hci_err_to_str(reason));
 
     if (reason == BT_HCI_ERR_REMOTE_USER_TERM_CONN) {
         LOG_INF("Remote user terminated connection. Deleting bond...");
+        try_unpair(conn_dst_addr);
         RC_LAST_PAIRED_ADDR_SET_NONE;
-        int err = bt_unpair((g_id < 0 ? BT_ID_DEFAULT : g_id), bt_conn_get_dst(conn));
-        if (err) {
-            LOG_ERR("Failed to delete bond (err %d) for %s", err, addr);
-        } else {
-            LOG_INF("Bond deleted successfully for %s", addr);
-        }
     }
 
     advertising_start();
@@ -709,6 +726,17 @@ static int cmd_wakeup(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_CMD_REGISTER(start_wakeup, NULL, "Send wakeup adv", cmd_wakeup);
+
+static int cmd_delete_paired(const struct shell *sh, size_t argc, char **argv)
+{
+    try_unpair(RC_LAST_PAIRED_ADDR);
+    RC_LAST_PAIRED_ADDR_SET_NONE;
+    
+    return 0;
+}
+
+SHELL_CMD_REGISTER(delete_paired, NULL, "delete lasted paired info", cmd_delete_paired);
+
 
 void adv_mode_switch_handler(struct k_work *work)
 {
