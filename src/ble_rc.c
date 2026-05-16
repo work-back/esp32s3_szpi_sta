@@ -21,6 +21,7 @@ LOG_MODULE_REGISTER(BLERC, LOG_LEVEL_DBG);
 enum {
     BTRC_ST_DISCONNECTE = 0,
     BTRC_ST_CONNECTED,
+    BTRC_ST_SECURITY_LV_OK,
 };
 
 static volatile int g_btrc_st = BTRC_ST_DISCONNECTE;
@@ -521,6 +522,7 @@ static void security_changed_cb(struct bt_conn *conn, bt_security_t level, enum 
 {
 	if (err == 0) {
 		LOG_INF("Set security Successed! level: %s(%u)", bt_security_err_to_str(err), err);
+        g_btrc_st = BTRC_ST_SECURITY_LV_OK;
 	} else {
 		LOG_ERR("Failed to set security level: %s(%u)", bt_security_err_to_str(err), err);
 	}
@@ -626,7 +628,14 @@ static void _bt_ck_looper(void)
         g_wakeup_adv_mode = true;
         try_advertising_start(true, 20);
 
-        bt_ck_k_sleep(120); if (!g_bt_ck_running) break;
+        while((g_btrc_st != BTRC_ST_SECURITY_LV_OK) && g_bt_ck_running) {
+            printk("--> Wait for RC Connect ...\n");
+            bt_ck_k_sleep(1);
+        }
+
+        printk("-->RC Connected \n");
+
+        bt_ck_k_sleep(30); if (!g_bt_ck_running) break;
 
     }
 
