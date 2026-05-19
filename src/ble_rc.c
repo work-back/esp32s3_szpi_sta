@@ -660,6 +660,46 @@ static void _bt_ck_looper_2(void)
     }
 }
 
+static void _bt_ck_looper_3(void)
+{
+    g_bt_ck_running = true;
+    int try_wakeup_cnt = 0;
+
+    while(g_bt_ck_running) {
+        printk("--> Switch off\n");
+        run_set_SK_v(0);
+
+        bt_ck_k_sleep(5); if (!g_bt_ck_running) break;
+
+        printk("--> Switch on\n");
+        run_set_SK_v(1);
+
+        bt_ck_k_sleep(5); if (!g_bt_ck_running) break;
+        
+        printk("--> wakeup_adv_mode\n");
+        try_advertising_start(true, 20);
+
+        try_wakeup_cnt = 1;
+        while((g_btrc_st != BTRC_ST_SECURITY_LV_OK) && g_bt_ck_running) {
+            printk("--> Wait for RC Connect [%d] ...\n", try_wakeup_cnt);
+            if (try_wakeup_cnt % 60 == 0) {
+                printk("--> wakeup_adv_mode\n");
+                try_advertising_start(true, 20);
+            }
+            bt_ck_k_sleep(1);
+            try_wakeup_cnt++;
+        }
+        if (!g_bt_ck_running) break;
+
+        printk("-->RC Connected \n");
+
+        bt_ck_k_sleep(30); if (!g_bt_ck_running) break;
+
+    }
+
+    return;
+}
+
 static void bt_ck_looper_thrd(void)
 {
     LOG_INF("bt_ck_looper_thrd start ...");
@@ -669,7 +709,7 @@ static void bt_ck_looper_thrd(void)
 
          LOG_INF("bt_ck_looper start ++++++");
         // _bt_ck_looper();
-        _bt_ck_looper_2();
+        _bt_ck_looper_3();
          LOG_INF("bt_ck_looper Stop ++++++");
 
     }
