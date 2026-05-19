@@ -112,6 +112,74 @@ static int connect_socket(const char *server, int port,
 	return ret;
 }
 
+int run_http_get_req(struct http_request *req, const char *server, int port)
+{
+	struct sockaddr_in addr4;
+	int sock4 = -1;
+	int32_t timeout = 3 * MSEC_PER_SEC;
+	int ret = 0;
+
+	(void)connect_socket(server, port,
+				&sock4, (struct sockaddr *)&addr4,
+				sizeof(addr4));
+	if (sock4 < 0) {
+		LOG_ERR("Cannot create HTTP IPv4 connection.");
+		return -ECONNABORTED;
+	}
+
+	ret = http_client_req(sock4, req, timeout, "IPv4 GET");
+	if (ret < 0) {
+		LOG_ERR("Client error %d", ret);
+	}
+
+	close(sock4);
+	sock4 = -1;
+
+    return 0;
+}
+
+int run_get_SK_v(void)
+{
+    struct http_request req;
+
+    memset(&req, 0, sizeof(req));
+
+	req.method = HTTP_GET;
+	req.url = "/get?value=Relay";
+	req.host = SERVER_ADDR4;
+	req.protocol = "HTTP/1.1";
+	req.response = response_cb;
+	req.recv_buf = recv_buf_ipv4;
+	req.recv_buf_len = sizeof(recv_buf_ipv4);
+
+    run_http_get_req(&req, SERVER_ADDR4, HTTP_PORT);
+
+    return 0;
+}
+
+int run_set_SK_v(uint8_t v)
+{
+    struct http_request req;
+
+    memset(&req, 0, sizeof(req));
+
+	req.method = HTTP_GET;
+    if (v == 0) {
+        req.url = "/set?Relay=0";
+    } else {
+        req.url = "/set?Relay=1";
+    }
+	req.host = SERVER_ADDR4;
+	req.protocol = "HTTP/1.1";
+	req.response = response_cb;
+	req.recv_buf = recv_buf_ipv4;
+	req.recv_buf_len = sizeof(recv_buf_ipv4);
+
+    run_http_get_req(&req, SERVER_ADDR4, HTTP_PORT);
+
+    return 0;
+}
+
 int run_queries(void)
 {
 	struct sockaddr_in addr4;

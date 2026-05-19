@@ -653,7 +653,9 @@ static void _bt_ck_looper_2(void)
 {
     g_bt_ck_running = true;
     while(g_bt_ck_running) {
-        run_queries();
+        run_set_SK_v(0);
+        bt_ck_k_sleep(5); if (!g_bt_ck_running) break;
+        run_set_SK_v(1);
         bt_ck_k_sleep(5); if (!g_bt_ck_running) break;
     }
 }

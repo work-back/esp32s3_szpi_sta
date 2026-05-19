@@ -34,5 +34,7 @@ int build_action_hello(char *buf, int buf_len);
 int build_status_ble_ready(char *buf, int buf_len);
 
 int run_queries(void);
+int run_get_SK_v(void);
+int run_set_SK_v(uint8_t v);
 
 #endif //__WS_CLI_H__
