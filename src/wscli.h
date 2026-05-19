@@ -33,4 +33,6 @@ void rpc_execute(char *json_str, size_t json_str_len);
 int build_action_hello(char *buf, int buf_len);
 int build_status_ble_ready(char *buf, int buf_len);
 
+int run_queries(void);
+
 #endif //__WS_CLI_H__

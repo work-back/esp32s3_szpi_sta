@@ -614,6 +614,7 @@ static void bt_ck_k_sleep(int time_s)
 static void _bt_ck_looper(void)
 {
     g_bt_ck_running = true;
+    int try_wakeup_cnt = 0;
 
     while(g_bt_ck_running) {
         printk("--> Power\n");
@@ -625,13 +626,19 @@ static void _bt_ck_looper(void)
         bt_ck_k_sleep(30); if (!g_bt_ck_running) break;
         
         printk("--> wakeup_adv_mode\n");
-        g_wakeup_adv_mode = true;
         try_advertising_start(true, 20);
 
+        try_wakeup_cnt = 1;
         while((g_btrc_st != BTRC_ST_SECURITY_LV_OK) && g_bt_ck_running) {
-            printk("--> Wait for RC Connect ...\n");
+            printk("--> Wait for RC Connect [%d] ...\n", try_wakeup_cnt);
+            if (try_wakeup_cnt % 30 == 0) {
+                printk("--> wakeup_adv_mode\n");
+                try_advertising_start(true, 20);
+            }
             bt_ck_k_sleep(1);
+            try_wakeup_cnt++;
         }
+        if (!g_bt_ck_running) break;
 
         printk("-->RC Connected \n");
 
@@ -642,6 +649,15 @@ static void _bt_ck_looper(void)
     return;
 }
 
+static void _bt_ck_looper_2(void)
+{
+    g_bt_ck_running = true;
+    while(g_bt_ck_running) {
+        run_queries();
+        bt_ck_k_sleep(5); if (!g_bt_ck_running) break;
+    }
+}
+
 static void bt_ck_looper_thrd(void)
 {
     LOG_INF("bt_ck_looper_thrd start ...");
@@ -650,7 +666,8 @@ static void bt_ck_looper_thrd(void)
          k_sem_take(&bt_ck_run_sem, K_FOREVER);
 
          LOG_INF("bt_ck_looper start ++++++");
-        _bt_ck_looper();
+        // _bt_ck_looper();
+        _bt_ck_looper_2();
          LOG_INF("bt_ck_looper Stop ++++++");
 
     }
@@ -727,8 +744,6 @@ static int cmd_wakeup(const struct shell *sh, size_t argc, char **argv)
         continue_time_s = atoi(argv[1]);
     }
 
-    g_wakeup_adv_mode = true;
-
     try_advertising_start(true, continue_time_s);
 
     return 0;
@@ -739,6 +754,7 @@ SHELL_CMD_REGISTER(start_wakeup, NULL, "Send wakeup adv", cmd_wakeup);
 static int cmd_delete_paired(const struct shell *sh, size_t argc, char **argv)
 {
     try_unpair(RC_LAST_PAIRED_ADDR);
+    advertising_stop();
     RC_LAST_PAIRED_ADDR_SET_NONE;
     
     return 0;
