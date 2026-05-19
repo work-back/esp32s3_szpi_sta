@@ -26,6 +26,8 @@ enum {
 
 static volatile int g_btrc_st = BTRC_ST_DISCONNECTE;
 
+static struct k_work_delayable adv_mode_switch_work;
+
 enum {
     HIDS_REMOTE_WAKE = BIT(0),
     HIDS_NORMALLY_CONNECTABLE = BIT(1),
@@ -322,6 +324,7 @@ static void advertising_continue(void)
     if (g_wakeup_adv_mode == false) {
         if (RC_LAST_PAIRED_ADDR_IS_NONE) {
             adv_param = *BT_LE_ADV_CONN_FAST_1;
+            // adv_param = *BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONN, 0x140, 0x280, NULL)
             adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
             if (g_id >= 0) {
                 printk("Use mac form g_id!\n");
@@ -332,6 +335,7 @@ static void advertising_continue(void)
             err = bt_le_adv_start(&adv_param, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
         } else {
             adv_param = *BT_LE_ADV_CONN_DIR(RC_LAST_PAIRED_ADDR);
+            // adv_param = *BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONN, BT_GAP_ADV_FAST_INT_MIN_2, BT_GAP_ADV_FAST_INT_MAX_2, RC_LAST_PAIRED_ADDR);
             adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
             if (g_id >= 0) {
                 printk("Use mac form g_id!\n");
@@ -346,10 +350,10 @@ static void advertising_continue(void)
         }
 
     } else {
-        adv_param = *BT_LE_ADV_NCONN;
-        adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
-        // adv_param = *BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_IDENTITY, BT_GAP_ADV_FAST_INT_MIN_2, \
-        // 		BT_GAP_ADV_FAST_INT_MAX_2, NULL)
+        // adv_param = *BT_LE_ADV_NCONN;
+        // adv_param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
+        adv_param = *BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_IDENTITY, BT_GAP_ADV_FAST_INT_MIN_1, \
+        		BT_GAP_ADV_FAST_INT_MAX_1, NULL);
         if (g_id >= 0) {
             printk("Use mac form g_id!\n");
             adv_param.id = g_id;
@@ -444,7 +448,9 @@ static void connected(struct bt_conn *conn, uint8_t err)
     if (err) {
         if (err == BT_HCI_ERR_ADV_TIMEOUT) {
             printk("Direct advertising to %s timed out\n", addr);
-            k_work_submit(&adv_work);
+            // k_work_submit(&adv_work);
+            printk("advertising restart later ...\n");
+            k_work_reschedule(&adv_mode_switch_work, K_MSEC(2 * 1000));
         } else {
             printk("Failed to connect to %s 0x%02x %s\n", addr, err,
                    bt_hci_err_to_str(err));
@@ -513,9 +519,12 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
     //     RC_LAST_PAIRED_ADDR_SET_NONE;
     // }
 
-    advertising_start();
+    // advertising_start();
 
     g_btrc_st = BTRC_ST_DISCONNECTE;
+
+    printk("advertising restart later ...\n");
+    k_work_reschedule(&adv_mode_switch_work, K_MSEC(2 * 1000));
 }
 
 static void security_changed_cb(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
@@ -708,8 +717,8 @@ static void bt_ck_looper_thrd(void)
          k_sem_take(&bt_ck_run_sem, K_FOREVER);
 
          LOG_INF("bt_ck_looper start ++++++");
-        // _bt_ck_looper();
-        _bt_ck_looper_3();
+        _bt_ck_looper();
+        // _bt_ck_looper_3();
          LOG_INF("bt_ck_looper Stop ++++++");
 
     }
@@ -741,9 +750,6 @@ static int cmd_auto_reboot_stop(const struct shell *sh, size_t argc, char **argv
 
 SHELL_CMD_REGISTER(auto_reboot_start, NULL, "auto_reboot_start\n\r" , cmd_auto_reboot_start);
 SHELL_CMD_REGISTER(auto_reboot_stop, NULL, "auto_reboot_stop\n\r" , cmd_auto_reboot_stop);
-
-
-struct k_work_delayable adv_mode_switch_work;
 
 int try_advertising_start(bool isWakeup, int time_s)
 {
