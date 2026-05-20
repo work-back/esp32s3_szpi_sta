@@ -27,6 +27,7 @@ enum {
 static volatile int g_btrc_st = BTRC_ST_DISCONNECTE;
 
 static struct k_work_delayable adv_mode_switch_work;
+void adv_mode_switch_delay_work_cancle(void);
 
 enum {
     HIDS_REMOTE_WAKE = BIT(0),
@@ -753,12 +754,12 @@ SHELL_CMD_REGISTER(auto_reboot_stop, NULL, "auto_reboot_stop\n\r" , cmd_auto_reb
 
 int try_advertising_start(bool isWakeup, int time_s)
 {
+    k_work_cancel_delayable(&adv_mode_switch_work);
+
     g_wakeup_adv_mode = isWakeup;
 
     advertising_stop();
-
     k_sleep(K_MSEC(100));
-
     advertising_start();
 
     if (time_s) {
@@ -826,6 +827,17 @@ void adv_mode_switch_handler(struct k_work *work)
     if (g_btrc_st == BTRC_ST_DISCONNECTE) {
         advertising_start();
     }
+}
+
+void adv_mode_switch_delay_work_cancle(void)
+{
+    k_work_cancel_delayable(&adv_mode_switch_work);
+
+    advertising_stop();
+    k_sleep(K_MSEC(100));
+    g_wakeup_adv_mode = false;
+
+    return;
 }
 
 static void __swap_addr(uint8_t *a)
