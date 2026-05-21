@@ -642,14 +642,14 @@ static void _bt_ck_looper(void)
         bt_ck_k_sleep(get_rand_range(10, 30)); if (!g_bt_ck_running) break;
         
         printk("--> wakeup_adv_mode\n");
-        try_advertising_start(true, 20);
+        try_advertising_start(true, 5);
 
         try_wakeup_cnt = 1;
         while((g_btrc_st != BTRC_ST_SECURITY_LV_OK) && g_bt_ck_running) {
             printk("--> Wait for RC Connect [%d] ...\n", try_wakeup_cnt);
             if (try_wakeup_cnt % 30 == 0) {
                 printk("--> wakeup_adv_mode\n");
-                try_advertising_start(true, 20);
+                try_advertising_start(true, 5);
             }
             bt_ck_k_sleep(1);
             try_wakeup_cnt++;
