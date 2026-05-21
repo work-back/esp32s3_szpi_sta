@@ -13,6 +13,7 @@
 #include <zephyr/shell/shell.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/bluetooth/controller.h>
+#include <zephyr/random/random.h>
 
 #include "wscli.h"
 
@@ -621,6 +622,11 @@ static void bt_ck_k_sleep(int time_s)
     } while(time_s-- && g_bt_ck_running);
 }
 
+uint8_t get_rand_range(uint8_t a, uint8_t b)
+{
+    return (sys_rand8_get() % (b - a + 1)) + a;
+}
+
 static void _bt_ck_looper(void)
 {
     g_bt_ck_running = true;
@@ -633,7 +639,7 @@ static void _bt_ck_looper(void)
         printk("--> Power\n");
         do_send_key(0x66);
 
-        bt_ck_k_sleep(30); if (!g_bt_ck_running) break;
+        bt_ck_k_sleep(get_rand_range(10, 30)); if (!g_bt_ck_running) break;
         
         printk("--> wakeup_adv_mode\n");
         try_advertising_start(true, 20);
@@ -652,7 +658,7 @@ static void _bt_ck_looper(void)
 
         printk("-->RC Connected \n");
 
-        bt_ck_k_sleep(30); if (!g_bt_ck_running) break;
+        bt_ck_k_sleep(get_rand_range(5, 30)); if (!g_bt_ck_running) break;
 
     }
 
