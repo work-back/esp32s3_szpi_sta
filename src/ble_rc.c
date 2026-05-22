@@ -545,39 +545,51 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
     .security_changed = security_changed_cb,
 };
 
-static struct bt_gatt_attr *report_decl = NULL;
 static inline struct bt_gatt_attr * get_attrs(void)
 {
+    static struct bt_gatt_attr *report_decl = NULL;
+    report_decl = bt_gatt_find_by_uuid(hid_svc.attrs, hid_svc.attr_count, BT_UUID_HIDS_REPORT);
     if (!report_decl) {
-        report_decl = bt_gatt_find_by_uuid(hid_svc.attrs, hid_svc.attr_count, BT_UUID_HIDS_REPORT);
-        if (!report_decl) {
-            printk("Error: HID Report Characteristic not found\n");
-            return NULL;
-        }
+        printk("Error: HID Report Characteristic not found\n");
+        return NULL;
     }
 
     return report_decl + 1;
 }
 
-static int do_send_key(uint8_t key)
+static int do_send_key2(uint8_t key)
 {
-    // struct bt_gatt_attr *rpt_val_att = get_attrs();
-    if (!report_decl) {
+    struct bt_gatt_attr *rpt_val_att = get_attrs();
+    if (!rpt_val_att) {
         printk("Error: HID Report Characteristic not found\n");
         return -1;
     }
 
     // 1. 按下按键
-    memset(report_val, 0, 8);
+    memset(report_val, 0, sizeof(report_val));
     report_val[2] = key;
-    //bt_gatt_notify(NULL, rpt_val_att, report_val, 8);
+    bt_gatt_notify(NULL, rpt_val_att, report_val, sizeof(report_val));
+
+    k_msleep(50);
+
+    // 2. 松开按键
+    memset(report_val, 0, sizeof(report_val));
+    bt_gatt_notify(NULL, rpt_val_att, report_val, sizeof(report_val));
+
+    return 0;
+}
+
+static int do_send_key(uint8_t key)
+{
+    // 1. 按下按键
+    memset(report_val, 0, sizeof(report_val));
+    report_val[2] = key;
     bt_gatt_notify(NULL, &hid_svc.attrs[6], report_val, sizeof(report_val));
 
     k_msleep(50);
 
     // 2. 松开按键
-    memset(report_val, 0, 8);
-    //bt_gatt_notify(NULL, rpt_val_att, report_val, 8);
+    memset(report_val, 0, sizeof(report_val));
     bt_gatt_notify(NULL, &hid_svc.attrs[6], report_val, sizeof(report_val));
 
     return 0;
