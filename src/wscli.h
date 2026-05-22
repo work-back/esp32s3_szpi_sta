@@ -21,6 +21,7 @@ enum {
     EVT_TIMER_OUT,
     EVT_WIFI_STA_START,
     EVT_WIFI_CONNECTED = 0x2000,
+    EVT_BLE_START,
 };
 
 int evt_send(unsigned int type, unsigned int len, void *data);

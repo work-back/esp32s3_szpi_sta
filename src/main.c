@@ -112,7 +112,7 @@ void evt_handle(void)
                     LOG_ERR("WiFi connection failed.");
                 }
                 #endif
-            } else if (msg->type == EVT_WIFI_CONNECTED) {
+            } else if (msg->type == EVT_WIFI_CONNECTED || msg->type == EVT_BLE_START) {
                 #if 0
                 LOG_INF("WiFi connected, starting WSCLI...");
                 if (try_connect_ws()) {
@@ -310,7 +310,11 @@ int main(void)
 
     evt_init();
 
+    #ifdef WIFI_STA_EN
     evt_send(EVT_WIFI_STA_START, 0, NULL);
+    #else
+     evt_send(EVT_BLE_START, 0, NULL);
+    #endif
 
 	while (1) {
         poll_loop();
@@ -324,7 +328,9 @@ int main(void)
 		k_sleep(K_SECONDS(1));
 	}
 
+#ifdef WIFI_STA_EN
 	wscli_fini();
+#endif
 
 	return 0;
 }
