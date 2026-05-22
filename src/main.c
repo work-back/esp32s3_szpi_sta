@@ -4,15 +4,19 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#ifdef WIFI_STA_EN
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/socket.h>
 #include <zephyr/posix/sys/socket.h>
 #include <zephyr/posix/arpa/inet.h>
+#endif // WIFI_STA_EN
+
 #include <zephyr/posix/unistd.h>
 #include <zephyr/posix/sys/eventfd.h>
 #include <zephyr/posix/poll.h>
 
 #include <zephyr/misc/lorem_ipsum.h>
-#include <zephyr/net/net_ip.h>
-#include <zephyr/net/socket.h>
+
 
 #include "wscli.h"
 
@@ -40,8 +44,11 @@ enum {
 static struct pollfd g_fds[__POLLFD_T_MAX__];
 
 static void timer_looper_thrd(void);
+
+#ifdef WIFI_STA_EN
 static bool send_msg_to_ws(uint8_t *buf, size_t buf_len);
 static int try_connect_ws(void);
+#endif
 
 #if defined(CONFIG_NET_TC_THREAD_PREEMPTIVE)
 #define THREAD_PRIORITY K_PRIO_PREEMPT(8)
@@ -71,6 +78,8 @@ int evt_send(unsigned int type, unsigned int len, void *data)
     if (g_fds[POLLFD_T_EVENTFD].fd >= 0) {
         eventfd_write(g_fds[POLLFD_T_EVENTFD].fd, 1);
     }
+
+    return 0;
 }
 
 void evt_handle(void)
@@ -91,14 +100,18 @@ void evt_handle(void)
         if (msg) {
             if (msg->type == EVT_TIMER_OUT) {
                 // send_msg(g_fds[POLLFD_T_SOCKET].fd, send_buf, sizeof(send_buf));
+                #ifdef WIFI_STA_EN
                 if (g_fds[POLLFD_T_SOCKET].fd > 0) {
                     wscli_ping(g_fds[POLLFD_T_SOCKET].fd);
                 }
+                #endif
             } else if (msg->type == EVT_WIFI_STA_START) {
+                #if WIFI_STA_EN
                 int wait_ret = sta_tryconnect();
                 if (wait_ret != 0) {
                     LOG_ERR("WiFi connection failed.");
                 }
+                #endif
             } else if (msg->type == EVT_WIFI_CONNECTED) {
                 #if 0
                 LOG_INF("WiFi connected, starting WSCLI...");
@@ -169,6 +182,7 @@ static void timer_looper_thrd(void)
     return;
 }
 
+#ifdef WIFI_STA_EN
 static int try_connect_ws(void)
 {
 	wscli_init();
@@ -191,6 +205,7 @@ static void ws_msg_handle(char *msg, int len)
 
     return;
 }
+#endif
 
 static int poll_loop(void)
 {
@@ -221,6 +236,7 @@ static int poll_loop(void)
 
     LOG_DBG("poll event GOT!");
 
+    #ifdef WIFI_STA_EN
     if (g_fds[POLLFD_T_SOCKET].fd >= 0) {
         if (p_fds[POLLFD_T_SOCKET].revents & POLLNVAL) {
             printk("[%s][%d] socket error:POLLNVAL\n", __func__, __LINE__);
@@ -242,6 +258,7 @@ static int poll_loop(void)
             ws_msg_handle(recv_buf, r_len);
         }
     }
+    #endif
 
     if (g_fds[POLLFD_T_EVENTFD].fd >= 0) {
         if (p_fds[POLLFD_T_EVENTFD].revents) {
@@ -257,6 +274,7 @@ static int poll_loop(void)
 	return 0;
 }
 
+#ifdef WIFI_STA_EN
 static bool send_msg_to_ws(uint8_t *data, size_t data_len)
 {
 	int ret;
@@ -281,6 +299,7 @@ static bool send_msg_to_ws(uint8_t *data, size_t data_len)
 
 	return true;
 }
+#endif
 
 int main(void)
 {

@@ -3,6 +3,12 @@
 
 mainmenu "Network Wi-Fi apsta_mode application"
 
+config WIFI_STA_EN
+    bool "Enable Wi-Fi Network Station mode"
+    default n
+    help
+      Enable WiFi Station support and compile sta.c.
+
 config WIFI_SAMPLE_SSID
 	string "SSID of the target AP"
 	help

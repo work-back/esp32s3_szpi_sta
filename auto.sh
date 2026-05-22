@@ -13,6 +13,13 @@ build_all() {
     west build -p always -b ${BOARD} --sysbuild ${PRJ}
 }
 
+build_all_no_net() {
+    if [ ! -z $1 ] ; then
+        PRJ=$1
+    fi
+    west build -p always -b ${BOARD} --sysbuild ${PRJ} -- -DCONF_FILE=prj_no_net.conf
+}
+
 flash_esp() {
     west flash --esp-device ${ESP_DEV}
 }

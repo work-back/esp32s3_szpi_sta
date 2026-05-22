@@ -421,9 +421,9 @@ struct bt_le_conn_param param = {
     .timeout = 300,      // 超时 3000ms (300 * 10ms)
 };
 
-static void update_fe_data(bt_addr_le_t *dst_addr)
+static void update_fe_data(const bt_addr_le_t *dst_addr)
 {
-    if (!update_fe_data) {
+    if (!dst_addr) {
         return;
     }
     fe_data[0] = dst_addr->a.val[0];
@@ -438,7 +438,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
     is_adv_running = false;
 
-    bt_addr_le_t *dst_addr = bt_conn_get_dst(conn);
+    const bt_addr_le_t *dst_addr = bt_conn_get_dst(conn);
     if (dst_addr) {
         update_fe_data(dst_addr);
         bt_addr_le_to_str(dst_addr, addr, sizeof(addr));
@@ -501,7 +501,7 @@ static void try_unpair(bt_addr_le_t *conn_dst_addr)
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
-    bt_addr_le_t *conn_dst_addr = NULL;
+    const bt_addr_le_t *conn_dst_addr = NULL;
     char addr[BT_ADDR_LE_STR_LEN];
 
     conn_dst_addr = bt_conn_get_dst(conn);
@@ -561,7 +561,7 @@ static inline struct bt_gatt_attr * get_attrs(void)
 
 static int do_send_key(uint8_t key)
 {
-    struct bt_gatt_attr * rpt_val_att = get_attrs();
+    // struct bt_gatt_attr *rpt_val_att = get_attrs();
     if (!report_decl) {
         printk("Error: HID Report Characteristic not found\n");
         return -1;
@@ -665,6 +665,8 @@ static void _bt_ck_looper(void)
     return;
 }
 
+
+#if WIFI_STA_EN
 static void _bt_ck_looper_2(void)
 {
     g_bt_ck_running = true;
@@ -675,6 +677,7 @@ static void _bt_ck_looper_2(void)
         bt_ck_k_sleep(5); if (!g_bt_ck_running) break;
     }
 }
+#endif
 
 static void _bt_ck_looper_3(void)
 {
@@ -817,11 +820,8 @@ static int cmd_delete_paired(const struct shell *sh, size_t argc, char **argv)
 
 SHELL_CMD_REGISTER(delete_paired, NULL, "delete lasted paired info", cmd_delete_paired);
 
-
 void adv_mode_switch_handler(struct k_work *work)
 {
-    int err = -1;
-
     printk("adv mode switch handle.\n");
 
     advertising_stop();
