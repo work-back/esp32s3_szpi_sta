@@ -639,6 +639,12 @@ uint8_t get_rand_range(uint8_t a, uint8_t b)
     return (sys_rand8_get() % (b - a + 1)) + a;
 }
 
+#ifdef WIFI_STA_EN
+#define BLERC_WAKEUP_TIME_S (10)
+#else
+#define BLERC_WAKEUP_TIME_S (3) // if not enable wifi net set to 3s maybe ok
+#endif
+
 static void _bt_ck_looper(void)
 {
     g_bt_ck_running = true;
@@ -654,14 +660,14 @@ static void _bt_ck_looper(void)
         bt_ck_k_sleep(get_rand_range(10, 30)); if (!g_bt_ck_running) break;
         
         printk("--> wakeup_adv_mode\n");
-        try_advertising_start(true, 10);
+        try_advertising_start(true, BLERC_WAKEUP_TIME_S);
 
         try_wakeup_cnt = 1;
         while((g_btrc_st != BTRC_ST_SECURITY_LV_OK) && g_bt_ck_running) {
             printk("--> Wait for RC Connect [%d] ...\n", try_wakeup_cnt);
             if (try_wakeup_cnt % 30 == 0) {
                 printk("--> wakeup_adv_mode\n");
-                try_advertising_start(true, 10);
+                try_advertising_start(true, BLERC_WAKEUP_TIME_S);
             }
             bt_ck_k_sleep(1);
             try_wakeup_cnt++;
