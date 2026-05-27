@@ -217,7 +217,7 @@ int wscli_init(void)
 
 	LOG_INF("Websocket IPv4 %d", g_websock4);
 
-return 0;
+	return 0;
 }
 
 int wscli_fini(void)

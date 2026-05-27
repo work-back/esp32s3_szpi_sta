@@ -642,7 +642,7 @@ uint8_t get_rand_range(uint8_t a, uint8_t b)
 #ifdef WIFI_STA_EN
 #define BLERC_WAKEUP_TIME_S (10)
 #else
-#define BLERC_WAKEUP_TIME_S (3) // if not enable wifi net set to 3s maybe ok
+#define BLERC_WAKEUP_TIME_S (6) // if not enable wifi net set to 3s maybe ok
 #endif
 
 static void _bt_ck_looper(void)

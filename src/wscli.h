@@ -1,6 +1,10 @@
 #ifndef __WS_CLI_H__
 #define __WS_CLI_H__
 
+#if CONFIG_WIFI_STA_EN
+#define STA_NETWORK_EN 1
+#endif
+
 int sta_tryconnect(void);
 
 #define MAX_RECV_BUF_LEN (1024)

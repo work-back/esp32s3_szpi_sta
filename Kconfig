@@ -5,7 +5,7 @@ mainmenu "Network Wi-Fi apsta_mode application"
 
 config WIFI_STA_EN
     bool "Enable Wi-Fi Network Station mode"
-    default n
+    default y
     help
       Enable WiFi Station support and compile sta.c.
 
