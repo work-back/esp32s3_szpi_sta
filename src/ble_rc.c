@@ -639,16 +639,33 @@ uint8_t get_rand_range(uint8_t a, uint8_t b)
     return (sys_rand8_get() % (b - a + 1)) + a;
 }
 
-#ifdef WIFI_STA_EN
+#ifdef STA_NETWORK_EN
 #define BLERC_WAKEUP_TIME_S (10)
 #else
 #define BLERC_WAKEUP_TIME_S (6) // if not enable wifi net set to 3s maybe ok
 #endif
 
+static inline bool __wait_rc_connected(void)
+{
+    int try_wakeup_cnt = 1;
+    while((g_btrc_st != BTRC_ST_SECURITY_LV_OK)) {
+        printk("--> Wait for RC Connect [%d] ...\n", try_wakeup_cnt);
+        if (try_wakeup_cnt % 30 == 0) {
+            printk("--> wakeup_adv_mode\n");
+            try_advertising_start(true, BLERC_WAKEUP_TIME_S);
+        }
+        bt_ck_k_sleep(1);if (!g_bt_ck_running) return false;
+        try_wakeup_cnt++;
+    }
+
+    printk("-->RC Connected \n");
+
+    return true;
+}
+
 static void _bt_ck_looper(void)
 {
     g_bt_ck_running = true;
-    int try_wakeup_cnt = 0;
 
     while(g_bt_ck_running) {
         printk("--> Power\n");
@@ -662,19 +679,9 @@ static void _bt_ck_looper(void)
         printk("--> wakeup_adv_mode\n");
         try_advertising_start(true, BLERC_WAKEUP_TIME_S);
 
-        try_wakeup_cnt = 1;
-        while((g_btrc_st != BTRC_ST_SECURITY_LV_OK) && g_bt_ck_running) {
-            printk("--> Wait for RC Connect [%d] ...\n", try_wakeup_cnt);
-            if (try_wakeup_cnt % 30 == 0) {
-                printk("--> wakeup_adv_mode\n");
-                try_advertising_start(true, BLERC_WAKEUP_TIME_S);
-            }
-            bt_ck_k_sleep(1);
-            try_wakeup_cnt++;
-        }
-        if (!g_bt_ck_running) break;
+        __wait_rc_connected();
 
-        printk("-->RC Connected \n");
+        if (!g_bt_ck_running) break;
 
         bt_ck_k_sleep(get_rand_range(5, 30)); if (!g_bt_ck_running) break;
 
@@ -684,7 +691,7 @@ static void _bt_ck_looper(void)
 }
 
 
-#if WIFI_STA_EN
+#if STA_NETWORK_EN
 static void _bt_ck_looper_2(void)
 {
     g_bt_ck_running = true;
@@ -700,7 +707,6 @@ static void _bt_ck_looper_2(void)
 static void _bt_ck_looper_3(void)
 {
     g_bt_ck_running = true;
-    int try_wakeup_cnt = 0;
 
     while(g_bt_ck_running) {
         printk("--> Switch off\n");
@@ -714,18 +720,10 @@ static void _bt_ck_looper_3(void)
         bt_ck_k_sleep(5); if (!g_bt_ck_running) break;
         
         printk("--> wakeup_adv_mode\n");
-        try_advertising_start(true, 20);
+        try_advertising_start(true, BLERC_WAKEUP_TIME_S);
 
-        try_wakeup_cnt = 1;
-        while((g_btrc_st != BTRC_ST_SECURITY_LV_OK) && g_bt_ck_running) {
-            printk("--> Wait for RC Connect [%d] ...\n", try_wakeup_cnt);
-            if (try_wakeup_cnt % 60 == 0) {
-                printk("--> wakeup_adv_mode\n");
-                try_advertising_start(true, 20);
-            }
-            bt_ck_k_sleep(1);
-            try_wakeup_cnt++;
-        }
+        __wait_rc_connected();
+
         if (!g_bt_ck_running) break;
 
         printk("-->RC Connected \n");
@@ -745,8 +743,8 @@ static void bt_ck_looper_thrd(void)
          k_sem_take(&bt_ck_run_sem, K_FOREVER);
 
          LOG_INF("bt_ck_looper start ++++++");
-        _bt_ck_looper();
-        // _bt_ck_looper_3();
+        // _bt_ck_looper();
+        _bt_ck_looper_3();
          LOG_INF("bt_ck_looper Stop ++++++");
 
     }
