@@ -305,6 +305,8 @@ int main(void)
 {
 	k_sleep(K_SECONDS(1));
 
+    lfs_run();
+
 	g_fds[POLLFD_T_EVENTFD].fd = -1;
     g_fds[POLLFD_T_SOCKET].fd = -1;
 
