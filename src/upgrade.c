@@ -20,7 +20,7 @@
 /* 动态获取当前空闲、应当写入的升级目标槽位 */
 uint8_t get_upgrade_target_partition_id(void)
 {
-    // // 获取当前正在运行的 Slot 对应的 Flash Area ID
+    // 获取当前正在运行的 Slot 对应的 Flash Area ID
     // uint8_t active_area_id = boot_fetch_active_slot();
 
     // if (active_area_id == SLOT0_PART_ID) {
