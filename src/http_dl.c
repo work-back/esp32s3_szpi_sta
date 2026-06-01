@@ -274,6 +274,7 @@ static int cmd_http_dl(const struct shell *sh, size_t argc, char **argv)
 
 SHELL_CMD_REGISTER(http_dl, NULL, 
 	        		"Download file over HTTP\n"
-        			"Usage: http_dl <hostname> <port> <path> <save_path>"
+        			"Usage: http_dl <hostname> <port> <path> <save_path>\n"
+					"        http_dl 192.168.10.100 80 /dl/1.zip 1.zip"
 					, cmd_http_dl);
 
