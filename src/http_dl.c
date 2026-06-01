@@ -24,6 +24,15 @@ LOG_MODULE_REGISTER(HTTP_DL, LOG_LEVEL_DBG);
 
 static __attribute__ ((section (".ext_ram.bss"))) uint8_t dl_recv_buf[MAX_DL_RECV_BUF_LEN];
 
+struct download_ctx {
+    struct fs_file_t file;       // 文件句柄
+    const struct shell *sh;      // Shell 指针（用于在终端中输出）
+    int64_t last_print_time;     // 上一次打印进度的时间戳
+    size_t total_written;        // 已下载并写入的数据大小
+    size_t total_size;           // 文件总大小（从 Content-Length 中获取）
+    bool has_size;               // 是否成功获取到文件总大小
+};
+
 static int http_dl_socket_init(const char *hostname, const char *port,
 			                   int *sock, struct sockaddr *addr, socklen_t addr_len)
 {
@@ -54,6 +63,7 @@ static int http_dl_socket_init(const char *hostname, const char *port,
 	return ret;
 }
 
+#if 0
 static int http_dl_response_cb(struct http_response *rsp,
 		       enum http_final_call final_data,
 		       void *user_data)
@@ -81,6 +91,72 @@ static int http_dl_response_cb(struct http_response *rsp,
 
 	return 0;
 }
+
+#else
+
+static int http_dl_response_cb(struct http_response *rsp,
+                               enum http_final_call final_data,
+                               void *user_data)
+{
+    struct download_ctx *ctx = (struct download_ctx *)user_data;
+
+    // 1. 尝试获取文件大小
+    if (rsp->cl_present && !ctx->has_size) {
+        ctx->total_size = rsp->content_length;
+        ctx->has_size = true;
+    }
+
+    // 2. 写入文件并累加计数器
+    if (rsp->body_found && rsp->body_frag_len > 0) {
+        ssize_t written = fs_write(&ctx->file, rsp->body_frag_start, rsp->body_frag_len);
+        if (written < 0) {
+            return written;
+        }
+        ctx->total_written += rsp->body_frag_len;
+    }
+
+    // 3. 时间节流逻辑
+    int64_t now = k_uptime_get(); // 获取当前系统毫秒数
+    bool is_final = (final_data == HTTP_DATA_FINAL);
+
+    // 限制：仅在【时间超过 1 秒】或【最后一次完成包】时才执行打印
+    if (is_final || (now - ctx->last_print_time >= 1000)) {
+        ctx->last_print_time = now;
+
+        if (ctx->has_size && ctx->total_size > 0) {
+            // 计算百分比
+            int percent = (int)((uint64_t)ctx->total_written * 100 / ctx->total_size);
+            if (percent > 100) percent = 100;
+
+            // 构建一个简易的 ASCII 进度条 (宽度为 20 个字符)
+            char bar[21];
+            int filled = percent / 5; // 20格 * 5% = 100%
+            for (int i = 0; i < 20; i++) {
+                bar[i] = (i < filled) ? '=' : ' ';
+            }
+            bar[20] = '\0';
+
+            // \r 使光标回到行首实现原地刷新，并在末尾留几个空格擦除可能存在的多余字符
+            shell_fprintf(ctx->sh, SHELL_NORMAL, 
+                          "\r[%s] %3d%% (%zu/%zu B)   ", 
+                          bar, percent, ctx->total_written, ctx->total_size);
+        } else {
+            // 分块传输等未知大小的情况
+            shell_fprintf(ctx->sh, SHELL_NORMAL, 
+                          "\rDownloaded: %zu B...   ", 
+                          ctx->total_written);
+        }
+
+        // 如果是最后一包，强制换行，让输出保持整齐
+        if (is_final) {
+            shell_fprintf(ctx->sh, SHELL_NORMAL, "\n[INFO] 下载完成。\n");
+        }
+    }
+
+    return 0;
+}
+
+#endif
 
 static int http_dl_socket_connect(const char *hostname, const char *port,
 			                      int *sock, struct sockaddr *addr, socklen_t addr_len)
@@ -129,17 +205,24 @@ static int http_dl_get_req(struct http_request *req, const char *hostname, const
     return 0;
 }
 
-int http_dl_file(const char *hostname, const char *port, const char *path, const char *save_path)
+int http_dl_file(const struct shell *sh, const char *hostname, const char *port, const char *path, const char *save_path)
 {
-	struct fs_file_t file;
-    fs_file_t_init(&file);
+	// struct fs_file_t file;
+	struct download_ctx ctx = {
+        .sh = sh,
+        .last_print_time = 0,
+        .total_written = 0,
+        .total_size = 0,
+        .has_size = false
+    };
+    fs_file_t_init(&(ctx.file));
 
 	char full_path[128];
 	const char * root_path = fatfs_get_root_path();
 
 	snprintf(full_path, sizeof(full_path), "%s/%s", root_path, save_path);
 
-    int ret = fs_open(&file, full_path, FS_O_CREATE | FS_O_WRITE);
+    int ret = fs_open(&(ctx.file), full_path, FS_O_CREATE | FS_O_WRITE);
     if (ret < 0) {
         LOG_ERR("can not open %s: %d", full_path, ret);
         return ret;
@@ -156,9 +239,9 @@ int http_dl_file(const char *hostname, const char *port, const char *path, const
 	req.recv_buf = dl_recv_buf;
 	req.recv_buf_len = sizeof(dl_recv_buf);
 
-    http_dl_get_req(&req, hostname, port, &file);
+    http_dl_get_req(&req, hostname, port, &ctx);
 
-	fs_close(&file);
+	fs_close(&(ctx.file));
 
     return 0;
 }
@@ -178,7 +261,7 @@ static int cmd_http_dl(const struct shell *sh, size_t argc, char **argv)
     shell_print(sh, "Save Path: %s", save_path);
 
     /* 调用下载引擎 */
-    int ret = http_dl_file(hostname, port, path, save_path);
+    int ret = http_dl_file(sh, hostname, port, path, save_path);
     if (ret < 0) {
         shell_error(sh, "download failed : %d", ret);
         return ret;
