@@ -43,5 +43,8 @@ int run_get_SK_v(void);
 int run_set_SK_v(uint8_t v);
 
 int lfs_run(void);
+int fatfs_init(void);
+void fatfs_fini(void);
+
 
 #endif //__WS_CLI_H__
