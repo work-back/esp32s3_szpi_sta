@@ -21,16 +21,16 @@
 uint8_t get_upgrade_target_partition_id(void)
 {
     // 获取当前正在运行的 Slot 对应的 Flash Area ID
-    // uint8_t active_area_id = boot_fetch_active_slot();
+    uint8_t active_area_id = boot_fetch_active_slot();
 
-    // if (active_area_id == SLOT0_PART_ID) {
-    //     printk("Current running: Slot 0. Targeted for upgrade: Slot 1\n");
-    //     return SLOT1_PART_ID; // 目标写到 Slot 1
-    // } else {
-    //     printk("Current running: Slot 1. Targeted for upgrade: Slot 0\n");
-    //     return SLOT0_PART_ID; // 目标写到 Slot 0
-    // }
-    return SLOT1_PART_ID;
+    if (active_area_id == SLOT0_PART_ID) {
+        printk("Current running: Slot 0. Targeted for upgrade: Slot 1\n\r");
+        return SLOT1_PART_ID; // 目标写到 Slot 1
+    } else {
+        printk("Current running: Slot 1. Targeted for upgrade: Slot 0\n\r");
+        return SLOT0_PART_ID; // 目标写到 Slot 0
+    }
+    // return SLOT1_PART_ID;
 }
 
 /**
@@ -123,7 +123,7 @@ int write_ota_file_to_partition(const char *file_path, uint8_t partition_id)
         write_offset += bytes_read;
     }
 
-    printk("OTA file successfully written to flash. Total bytes: %u\n", write_offset);
+    printk("\n\rOTA file successfully written to flash. Total bytes: %u\n", write_offset);
     rc = 0;
 
 cleanup:
@@ -139,11 +139,12 @@ void trigger_upgrade(void)
 {
     // 标记 slot1 中的镜像为“待测试运行”
     // 采用 BOOT_UPGRADE_TEST 可以在新固件启动挂掉时自动回滚，安全系数高
-    // int rc = boot_request_upgrade(BOOT_UPGRADE_TEST);
-    // if (rc < 0) {
-    //     printk("Failed to request boot upgrade: %d\n", rc);
-    //     return;
-    // }
+    int rc = boot_request_upgrade(BOOT_UPGRADE_TEST);
+    // int rc = boot_request_upgrade_multi(1, BOOT_UPGRADE_TEST);
+    if (rc < 0) {
+        printk("Failed to request boot upgrade: %d\n", rc);
+        return;
+    }
 
     printk("Upgrade requested. Rebooting...\n");
     k_msleep(100);
@@ -169,9 +170,11 @@ void perform_ota_upgrade_from_file(const char *bin_file_path)
 
 static int cmd_upgrade(const struct shell *sh, size_t argc, char **argv)
 {
-    if (argc < 2) return -EINVAL;
 
-    const char *image_path  = argv[1];
+    const char *image_path = "zephyr.bin";
+    if (argc >= 2) {
+        image_path  = argv[1];
+    }
 
     char full_path[128];
 	const char * root_path = fatfs_get_root_path();
