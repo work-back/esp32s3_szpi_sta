@@ -243,6 +243,10 @@ int http_dl_file(const struct shell *sh, const char *hostname, const char *port,
 
 	fs_close(&(ctx.file));
 
+	unsigned char output_sha256[32] = {0};
+	calculate_file_sha256(full_path, output_sha256);
+	print_sha256_sum(output_sha256, full_path);
+
     return 0;
 }
 

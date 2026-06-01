@@ -48,5 +48,7 @@ const char * fatfs_get_root_path(void);
 
 void fatfs_fini(void);
 
+int calculate_file_sha256(const char *filepath, unsigned char output_sha256[32]);
+void print_sha256_sum(const unsigned char sha256[32], const char *filename);
 
 #endif //__WS_CLI_H__
