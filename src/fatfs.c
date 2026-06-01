@@ -21,11 +21,7 @@
  *  Note the fatfs library is able to mount only strings inside _VOLUME_STRS
  *  in ffconf.h
  */
-#if defined(CONFIG_DISK_DRIVER_MMC)
-#define DISK_DRIVE_NAME "SD2"
-#else
 #define DISK_DRIVE_NAME "SD"
-#endif
 
 #define DISK_MOUNT_PT "/"DISK_DRIVE_NAME":"
 
@@ -89,7 +85,8 @@ static const char *disk_mount_pt = DISK_MOUNT_PT;
 
 void fatfs_dump_disk_info(void)
 {
-	/* raw disk i/o */
+	LOG_INF("DUMP DISK INFO ++++++++++++++++++++++++++++++");
+
 	do {
 		static const char *disk_pdrv = DISK_DRIVE_NAME;
 		uint64_t memory_size_mb;
@@ -111,9 +108,11 @@ void fatfs_dump_disk_info(void)
 			LOG_ERR("Unable to get sector size");
 			break;
 		}
-		printk("Sector size %u\n", block_size);
+		LOG_INF("Sector size %u\n", block_size);
 
-		memory_size_mb = (uint64_t)block_count * block_size; printk("Memory Size(MB) %u\n", (uint32_t)(memory_size_mb >> 20));
+		memory_size_mb = (uint64_t)block_count * block_size; 
+		
+		LOG_INF("Memory Size(MB) %u\n", (uint32_t)(memory_size_mb >> 20));
 
 		if (disk_access_ioctl(disk_pdrv, DISK_IOCTL_CTRL_DEINIT, NULL) != 0) {
 			LOG_ERR("Storage deinit ERROR!");
@@ -121,16 +120,16 @@ void fatfs_dump_disk_info(void)
 		}
 	} while (0);
 
+	LOG_INF("DUMP DISK INFO ------------------------------");
+
 	return;
 }
 
 int fatfs_init(void)
 {
-	fatfs_dump_disk_info();
-
+	// fatfs_dump_disk_info();
 	mp.mnt_point = disk_mount_pt;
 
-	int res = fs_mount(&mp);
 	if (fs_mount(&mp) != FS_RET_OK) {
 		LOG_ERR("Error mounting disk.\n");
 		return -1;
@@ -152,6 +151,11 @@ void fatfs_fini(void)
 	fs_unmount(&mp);
 
 	return;
+}
+
+const char * fatfs_get_root_path(void)
+{
+	return disk_mount_pt;
 }
 
 /* List dir entry by path

@@ -44,6 +44,8 @@ int run_set_SK_v(uint8_t v);
 
 int lfs_run(void);
 int fatfs_init(void);
+const char * fatfs_get_root_path(void);
+
 void fatfs_fini(void);
 
 

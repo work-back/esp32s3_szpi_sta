@@ -18,13 +18,7 @@ LOG_MODULE_REGISTER(HTTP_DL, LOG_LEVEL_DBG);
 
 #include <zephyr/shell/shell.h>
 
-#define HTTP_PORT 80
-
-#if defined(CONFIG_NET_CONFIG_HTTP_SRV_ADDR)
-#define SERVER_ADDR4  CONFIG_NET_CONFIG_HTTP_SRV_ADDR
-#else
-#define SERVER_ADDR4 "192.168.10.111"
-#endif
+#include "wscli.h"
 
 #define MAX_DL_RECV_BUF_LEN 1024
 
@@ -34,20 +28,25 @@ static int http_dl_socket_init(const char *hostname, const char *port,
 			                   int *sock, struct sockaddr *addr, socklen_t addr_len)
 {
 	int ret = 0;
-	struct addrinfo hints;
+	struct addrinfo hints= {
+		.ai_family = AF_INET,
+		.ai_socktype = SOCK_STREAM,
+		.ai_protocol = IPPROTO_TCP,
+	};
+
 	struct addrinfo *res = NULL;
 
 	memset(addr, 0, addr_len);
 
 	ret = getaddrinfo(hostname, port, &hints, &res);
 	if (ret != 0) {
+		LOG_ERR("Failed to getaddrinfo of %s:%s (%d)", hostname, port, -errno);
 		return -1;
 	}
 
 	memcpy(addr, res->ai_addr, addr_len);
 
 	*sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-
 	if (*sock < 0) {
 		LOG_ERR("Failed to create IPv4 HTTP socket (%d)", -errno);
 	}
@@ -70,13 +69,15 @@ static int http_dl_response_cb(struct http_response *rsp,
 	}
 
 	if (final_data == HTTP_DATA_MORE) {
-		LOG_INF("Partial data received (%zd bytes)", rsp->data_len);
+		// LOG_INF("Partial data received (%zd bytes)", rsp->data_len);
 	} else if (final_data == HTTP_DATA_FINAL) {
 		LOG_INF("All the data received (%zd bytes)", rsp->data_len);
 	}
 
-	LOG_INF("Response to %s", (const char *)user_data);
-	LOG_INF("Response status %d:%s", rsp->http_status_code, rsp->http_status);
+	if (rsp->http_status_code != 200) {
+		LOG_INF("Response Error: %d:%s", rsp->http_status_code, rsp->http_status);
+	}
+	
 
 	return 0;
 }
@@ -108,7 +109,7 @@ static int http_dl_get_req(struct http_request *req, const char *hostname, const
 {
 	struct sockaddr_in addr4;
 	int sock4 = -1;
-	int32_t timeout = 3 * MSEC_PER_SEC;
+	int32_t timeout = 5 * 60 * MSEC_PER_SEC;
 	int ret = 0;
 
 	(void)http_dl_socket_connect(hostname, port, &sock4, (struct sockaddr *)&addr4, sizeof(addr4));
@@ -132,9 +133,15 @@ int http_dl_file(const char *hostname, const char *port, const char *path, const
 {
 	struct fs_file_t file;
     fs_file_t_init(&file);
-    int ret = fs_open(&file, save_path, FS_O_CREATE | FS_O_WRITE);
+
+	char full_path[128];
+	const char * root_path = fatfs_get_root_path();
+
+	snprintf(full_path, sizeof(full_path), "%s/%s", root_path, save_path);
+
+    int ret = fs_open(&file, full_path, FS_O_CREATE | FS_O_WRITE);
     if (ret < 0) {
-        LOG_ERR("can not open %s: %d", save_path, ret);
+        LOG_ERR("can not open %s: %d", full_path, ret);
         return ret;
     }
 
@@ -158,13 +165,8 @@ int http_dl_file(const char *hostname, const char *port, const char *path, const
 
 static int cmd_http_dl(const struct shell *sh, size_t argc, char **argv)
 {
-    /* 
-     * argv[0] = "download"
-     * argv[1] = <hostname>
-     * argv[2] = <port>
-     * argv[3] = <path>
-     * argv[4] = <save_path>
-     */
+    if (argc < 5) return -EINVAL;
+
     const char *hostname  = argv[1];
     const char *port      = argv[2];
     const char *path      = argv[3];

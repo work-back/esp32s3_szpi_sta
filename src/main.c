@@ -230,7 +230,7 @@ static int poll_loop(void)
 	}
 
 	if (ret == 0) {
-		LOG_DBG("poll timeout!");
+		// LOG_DBG("poll timeout!");
 		return -EAGAIN;
 	}
 
