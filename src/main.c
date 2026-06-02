@@ -330,6 +330,8 @@ int main(void)
 {
 	k_sleep(K_SECONDS(1));
 
+    upgrade_check_image();
+
     dump_version_infos();
 
     // lfs_run();

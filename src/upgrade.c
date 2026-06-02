@@ -189,3 +189,23 @@ SHELL_CMD_REGISTER(upgrade, NULL,
         			"Usage: http_dl <image_path>\n"
 					"        http_dl 1.img"
 					, cmd_upgrade);
+
+int upgrade_check_image()
+{
+    bool image_ok = boot_is_img_confirmed();
+    printk("Current image is%s confirmed\n", image_ok ? "" : " not");
+
+    if (image_ok) {
+        return 0;
+    }
+
+    int ret = boot_write_img_confirmed();
+    if (ret < 0) {
+        printk("Failed to confirm current image: %d\n", ret);
+        return -1;
+    }
+
+    printk("Marked current image as OK\n");
+
+    return 0;
+}

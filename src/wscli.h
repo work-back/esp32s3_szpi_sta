@@ -52,5 +52,6 @@ int calculate_file_sha256(const char *filepath, unsigned char output_sha256[32])
 void print_sha256_sum(const unsigned char sha256[32], const char *filename);
 
 void perform_ota_upgrade_from_file(const char *bin_file_path);
+int upgrade_check_image();
 
 #endif //__WS_CLI_H__
