@@ -62,6 +62,8 @@ int write_ota_file_to_partition(const char *file_path, uint8_t partition_id)
         return -EINVAL;
     }
 
+    // TODO: CONFIG_MCUMGR_GRP_IMG_REJECT_DIRECT_XIP_MISMATCHED_SLOT, check xip hdr off and slot off
+
     // 2. 打开目标 Flash 分区
     rc = flash_area_open(partition_id, &fa);
     if (rc < 0) {
