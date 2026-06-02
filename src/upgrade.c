@@ -140,7 +140,6 @@ void trigger_upgrade(void)
     // 标记 slot1 中的镜像为“待测试运行”
     // 采用 BOOT_UPGRADE_TEST 可以在新固件启动挂掉时自动回滚，安全系数高
     int rc = boot_request_upgrade(BOOT_UPGRADE_TEST);
-    // int rc = boot_request_upgrade_multi(1, BOOT_UPGRADE_TEST);
     if (rc < 0) {
         printk("Failed to request boot upgrade: %d\n", rc);
         return;

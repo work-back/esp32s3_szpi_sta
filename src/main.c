@@ -2,6 +2,8 @@
 #include <stdlib.h>
 
 #include <zephyr/kernel.h>
+#include <zephyr/version.h>
+
 #include <zephyr/logging/log.h>
 
 #ifdef STA_NETWORK_EN
@@ -301,11 +303,37 @@ static bool send_msg_to_ws(uint8_t *data, size_t data_len)
 }
 #endif
 
+void dump_version_infos(void)
+{
+    printk("=== System Version Infos ===\n");
+
+
+    printk("Zephyr version: %s\n", KERNEL_VERSION_STRING);
+
+#ifdef CONFIG_APP_VERSION
+    printk("App version: %s\n", CONFIG_APP_VERSION);
+#else
+    printk("App version: 1.0.0 (Default)\n");
+#endif
+
+
+    printk("Build time: %s %s\n", __DATE__, __TIME__);
+
+#ifdef __VERSION__
+    printk("Compiler: %s\n", __VERSION__);
+#endif
+
+    printk("============================\n");
+}
+
 int main(void)
 {
 	k_sleep(K_SECONDS(1));
 
+    dump_version_infos();
+
     // lfs_run();
+    printk("fatfs init ...\n");
     fatfs_init();
 
 	g_fds[POLLFD_T_EVENTFD].fd = -1;
