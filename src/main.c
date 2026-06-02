@@ -310,8 +310,8 @@ void dump_version_infos(void)
 
     printk("Zephyr version: %s\n", KERNEL_VERSION_STRING);
 
-#ifdef CONFIG_APP_VERSION
-    printk("App version: %s\n", CONFIG_APP_VERSION);
+#ifdef CONFIG_CUSTOM_VERSION
+    printk("App version: %s+%s\n", CONFIG_CUSTOM_VERSION, CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION);
 #else
     printk("App version: 1.0.0 (Default)\n");
 #endif
@@ -343,7 +343,7 @@ int main(void)
 
     evt_init();
 
-    #ifdef STA_NETWORK_EN;
+    #ifdef STA_NETWORK_EN
     printk("STA_NETWORK_EN is enabled!\n");
     evt_send(EVT_WIFI_STA_START, 0, NULL);
     #else

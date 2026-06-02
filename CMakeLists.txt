@@ -2,6 +2,24 @@
 
 cmake_minimum_required(VERSION 3.20.0)
 
+# run auto update build version
+find_program(PYTHON_BIN NAMES python3 python REQUIRED)
+set(UPDATE_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/update_build_version.py")
+execute_process(
+    COMMAND ${PYTHON_BIN} ${UPDATE_SCRIPT}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    RESULT_VARIABLE update_res
+    ERROR_VARIABLE update_err
+)
+
+if(NOT update_res EQUAL 0)
+    message(FATAL_ERROR "run update_build_version.py failed: ${update_err}")
+else()
+    message(STATUS "run update_build_version.py SUCCESS")
+endif()
+
+list(APPEND EXTRA_CONF_FILE "${CMAKE_CURRENT_SOURCE_DIR}/build_version.conf")
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(wifi_sta)
 

@@ -32,5 +32,17 @@ config WIFI_SAMPLE_DHCPV4_START
 	  implementation. In some cases, the server may be started after the AP is up,
 	  using the vendor's default IP address, gateway, subnet mask.
 
+config CUSTOM_VERSION
+	string "Custeom Version"
+	help
+	  Custeom Version.
+	  For example: "1.0.1"
+
+
+config CUSTOM_BUILD_NUMBER
+	string "Custeom Build number"
+	help
+	  Custeom Build number.
+	  For example: "1001"
 
 source "Kconfig.zephyr"

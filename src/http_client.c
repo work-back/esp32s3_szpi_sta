@@ -47,6 +47,7 @@ static int setup_socket(const char *server, int port,
 	return ret;
 }
 
+#if 0
 static int payload_cb(int sock, struct http_request *req, void *user_data)
 {
 	const char *content[] = {
@@ -70,6 +71,7 @@ static int payload_cb(int sock, struct http_request *req, void *user_data)
 
 	return pos;
 }
+#endif
 
 static int response_cb(struct http_response *rsp,
 		       enum http_final_call final_data,

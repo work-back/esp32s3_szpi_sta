@@ -14,8 +14,8 @@
 #define CHUNK_SIZE 1024  // 每次读取/写入的块大小（1KB）
 
 /* 获取您在 DTS 中定义的两套分区 ID */
-#define SLOT0_PART_ID FIXED_PARTITION_ID(slot0_partition)
-#define SLOT1_PART_ID FIXED_PARTITION_ID(slot1_partition)
+#define SLOT0_PART_ID PARTITION_ID(slot0_partition)
+#define SLOT1_PART_ID PARTITION_ID(slot0_partition)
 
 /* 动态获取当前空闲、应当写入的升级目标槽位 */
 uint8_t get_upgrade_target_partition_id(void)
