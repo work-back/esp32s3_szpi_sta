@@ -743,8 +743,8 @@ static void bt_ck_looper_thrd(void)
          k_sem_take(&bt_ck_run_sem, K_FOREVER);
 
          LOG_INF("bt_ck_looper start ++++++");
-        // _bt_ck_looper();
-        _bt_ck_looper_3();
+        _bt_ck_looper();
+        // _bt_ck_looper_3();
          LOG_INF("bt_ck_looper Stop ++++++");
 
     }
