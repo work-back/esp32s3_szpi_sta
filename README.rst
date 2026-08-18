@@ -1,66 +1,47 @@
-.. zephyr:code-sample:: wifi-ap-sta-mode
-   :name: Wi-Fi AP-STA mode
-   :relevant-api: wifi_mgmt dhcpv4_server
+BLE multi-touch simulator
+=========================
 
-   Configure a Wi-Fi board to operate as both an Access Point (AP) and a Station (STA).
+This application is the Zephyr side of a low-latency Bluetooth HID-over-GATT
+multi-touch simulator. It targets ``native_sim`` for development and expects
+its Bluetooth HCI traffic to be connected to the target BLE dongle by the
+native simulator runtime configuration.
 
-Overview
-********
+Current implementation
+----------------------
 
-The Wi-Fi AP-STA mode of a Wi-Fi board allows it to function as both
-an Access Point (AP) and a Station (STA) simultaneously.
-This sample demonstrates how to configure and utilize AP-STA mode.
+The application exposes a standard HID service with a Digitizers/Touch Screen
+report descriptor. Report ID 1 has three independent finger collections. Each
+contact contains Tip Switch, In Range, Contact Identifier, and absolute X/Y
+coordinates in the HID range 0..32767; the report ends with Contact Count.
 
-Configuration and usage of following interfaces is shown in sample.
+For initial verification, use the Zephyr shell after a phone has connected and
+enabled input-report notifications::
 
-1. ``AP mode``: AP mode is configured and enabled. DHCPv4 server is also
-   configured to assign IP addresses to the joining station.
-2. ``STA mode``: Provide the SSID and PSK of you router
+   touch <slot> <down> <x> <y>
 
-In the sample code, initially, the AP mode is enabled, followed by enabling the STA mode.
-The driver checks if AP mode was previously enabled. If so, it transitions
-the board into AP-STA mode to support both modes and attempts to connect to the
-AP specified by the provided SSID and PSK.
+For example, a press and release at the centre of the display are::
 
-Requirements
-************
+   touch 0 1 16384 16384
+   touch 0 0 16384 16384
 
-This example should be able to run on any commonly available
-:zephyr:board:`esp32_devkitc` development board without any extra hardware.
+``slot`` is 0..2 and ``down`` is 0 or 1. The shell is only a diagnostic input
+path; it is not intended to meet the latency target.
 
-To enable or disable ``AP-STA`` mode, modify the :kconfig:option:`CONFIG_WIFI_USAGE_MODE_STA_AP`
-parameter in the ``prj.conf`` file of the demo.
+Building
+--------
 
-By default, AP-STA mode is disabled.
+Use only the project build wrapper, which runs Zephyr in the Docker container::
 
-Building, Flashing and Running
-******************************
+   ./build.sh
 
-.. zephyr-app-commands::
-   :zephyr-app: samples/net/wifi/apsta_mode
-   :board: esp32_devkitc/esp32/procpu
-   :goals: build flash
-   :compact:
+The wrapper uses the dedicated ``build-sim_rc`` directory, so it does not
+disturb another application that may be using the shared top-level ``build``
+directory.
 
-Sample Output
-=================
+Next step
+---------
 
-.. code-block:: console
-
-   *** Booting Zephyr OS build v3.7.0-rc3-104-gd1e5c5b3f9b7 ***
-   [00:00:05.171,000] <inf> MAIN: Turning on AP Mode
-   [00:00:05.172,000] <dbg> net_dhcpv4_server: net_dhcpv4_server_start: Started DHCPv4 server, address pool:
-   [00:00:05.172,000] <dbg> net_dhcpv4_server: net_dhcpv4_server_start:     0: 192.168.4.11
-   [00:00:05.172,000] <dbg> net_dhcpv4_server: net_dhcpv4_server_start:     1: 192.168.4.12
-   [00:00:05.172,000] <dbg> net_dhcpv4_server: net_dhcpv4_server_start:     2: 192.168.4.13
-   [00:00:05.172,000] <dbg> net_dhcpv4_server: net_dhcpv4_server_start:     3: 192.168.4.14
-   [00:00:05.172,000] <inf> MAIN: DHCPv4 server started...
-
-   [00:00:05.350,000] <inf> MAIN: AP Mode is enabled. Waiting for sta to connect ESP32-AP
-   [00:00:05.350,000] <inf> MAIN: Connecting to SSID: ZIN-Dummy
-
-   [00:00:09.498,000] <inf> net_dhcpv4: Received: 192.168.43.44
-   [00:00:09.499,000] <inf> MAIN: Connected to ZIN-Dummy
-   [00:00:32.739,000] <inf> MAIN: station: 7C:50:79:17:89:19 joined
-   [00:00:32.832,000] <dbg> net_dhcpv4_server: dhcpv4_handle_discover: DHCPv4 processing Discover - reserved 192.168.4.11
-   [00:00:33.839,000] <dbg> net_dhcpv4_server: dhcpv4_handle_request: DHCPv4 processing Request - allocated 192.168.4.11
+Replace the shell command input with the chosen host-to-simulator IPC transport
+and call ``touch_hid_send(slot, down, x, y)`` directly from its receive path.
+The transport needs a timestamped latency measurement before claiming the
+end-to-end 10 ms target.
