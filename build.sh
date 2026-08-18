@@ -16,7 +16,7 @@ echo "Zephyr build"
 echo "========================================"
 echo "Container : $CONTAINER"
 echo "Project   : $PROJECT_DIR"
-echo "Command   : west build -d build-sim_rc -b native_sim sim_rc"
+echo "Command   : west build -p always -d build-sim_rc -b native_sim sim_rc"
 echo "========================================"
 
 # 1. 如果容器不存在或没有运行，则启动
@@ -47,7 +47,7 @@ echo "[INFO] Container is running."
 docker exec \
     -w "$PROJECT_DIR" \
     "$CONTAINER" \
-    bash -c ' source /home/langyj/zephyrproject/.venv/bin/activate && west build -d build-sim_rc -b native_sim sim_rc'
+    bash -c ' source /home/langyj/zephyrproject/.venv/bin/activate && west build -p always -d build-sim_rc -b native_sim sim_rc'
 
 echo "========================================"
 echo "Build successful"
