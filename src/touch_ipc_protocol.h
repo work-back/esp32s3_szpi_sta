@@ -7,17 +7,25 @@
 
 /* POSIX shared-memory object used by the native_sim input backend. */
 #define TOUCH_IPC_SHM_NAME "/zephyr-touch-ipc"
+#define TOUCH_IPC_QUEUE_SIZE 128U
+#define TOUCH_IPC_QUEUE_MASK (TOUCH_IPC_QUEUE_SIZE - 1U)
+
+struct touch_ipc_event {
+	uint16_t x;
+	uint16_t y;
+	uint8_t slot;
+	uint8_t down;
+	uint16_t reserved;
+};
 
 /*
- * A latest-state mailbox, shared by the Linux input bridge and Zephyr.
- * sequence is a seqlock: odd while the producer updates a frame, even once
- * the update is committed.  All fields must remain naturally aligned 32-bit
- * values so both processes can access them with atomic builtins.
+ * Lock-free single-producer single-consumer ring buffer between Linux input bridge
+ * and Zephyr native_sim receiver thread.
  */
 struct touch_ipc_mailbox {
-	uint32_t sequence;
-	uint32_t position; /* x in bits 0..15, y in bits 16..31 */
-	uint32_t state;    /* slot in bits 0..7, down in bit 8 */
+	uint32_t head; /* Incremented by producer (bridge) */
+	uint32_t tail; /* Incremented by consumer (Zephyr) */
+	struct touch_ipc_event queue[TOUCH_IPC_QUEUE_SIZE];
 };
 
 #define TOUCH_IPC_STATE_DOWN (1U << 8)

@@ -19,52 +19,27 @@ LOG_MODULE_REGISTER(touch_ipc, LOG_LEVEL_INF);
 
 static volatile struct touch_ipc_mailbox *mailbox;
 
-static bool read_frame(uint32_t *last_sequence, uint8_t *slot, bool *down,
-		       uint16_t *x, uint16_t *y)
-{
-	uint32_t begin;
-	uint32_t end;
-	uint32_t position;
-	uint32_t state;
-
-	begin = __atomic_load_n(&mailbox->sequence, __ATOMIC_ACQUIRE);
-	if (begin == *last_sequence || (begin & 1U)) {
-		return false;
-	}
-
-	position = __atomic_load_n(&mailbox->position, __ATOMIC_RELAXED);
-	state = __atomic_load_n(&mailbox->state, __ATOMIC_RELAXED);
-	end = __atomic_load_n(&mailbox->sequence, __ATOMIC_ACQUIRE);
-	if (begin != end || (end & 1U)) {
-		return false;
-	}
-
-	*last_sequence = end;
-	*slot = state & 0xffU;
-	*down = (state & TOUCH_IPC_STATE_DOWN) != 0U;
-	*x = position & 0xffffU;
-	*y = position >> 16;
-	return true;
-}
-
 static void touch_ipc_thread(void *arg1, void *arg2, void *arg3)
 {
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
-	uint32_t last_sequence = __atomic_load_n(&mailbox->sequence, __ATOMIC_ACQUIRE);
-
 	while (true) {
-		uint8_t slot;
-		bool down;
-		uint16_t x;
-		uint16_t y;
+		uint32_t head = __atomic_load_n(&mailbox->head, __ATOMIC_ACQUIRE);
+		uint32_t tail = __atomic_load_n(&mailbox->tail, __ATOMIC_RELAXED);
 
-		if (read_frame(&last_sequence, &slot, &down, &x, &y)) {
-            // LOG_INF("(%d, %d)", x, y);
+		while (tail != head) {
+			uint32_t index = tail & TOUCH_IPC_QUEUE_MASK;
+			uint8_t slot = mailbox->queue[index].slot;
+			bool down = mailbox->queue[index].down != 0;
+			uint16_t x = mailbox->queue[index].x;
+			uint16_t y = mailbox->queue[index].y;
+
+			tail++;
+			__atomic_store_n(&mailbox->tail, tail, __ATOMIC_RELEASE);
+
 			int err = touch_hid_send(slot, down, x, y);
-
 			if (err != 0 && err != -ENOTCONN) {
 				LOG_WRN("Touch frame was not sent: %d", err);
 			}

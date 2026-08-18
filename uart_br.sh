@@ -146,7 +146,7 @@ mouse_event=$(find_event "$mouse_id" mouse) || {
 
 if [[ ! -x $BRIDGE_BIN || $BRIDGE_SOURCE -nt $BRIDGE_BIN ]]; then
 	echo "[INFO] Building touch_input_bridge"
-	cc -std=c17 -O2 -Wall -Wextra -Werror -o "$BRIDGE_BIN" "$BRIDGE_SOURCE"
+	cc -std=c17 -O2 -Wall -Wextra -Werror -o "$BRIDGE_BIN" "$BRIDGE_SOURCE" -lm
 fi
 
 echo "[INFO] Keyboard: $keyboard_event ($keyboard_id)"

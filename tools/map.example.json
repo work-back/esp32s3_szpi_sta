@@ -1,34 +1,59 @@
 {
-  "version": 1,
+  "version": 2,
   "screen": {
     "width": 2400,
     "height": 1080
   },
-  "mouse_joystick": {
+  "release_movement_keys": ["KEY_TAB", "KEY_M"],
+  "release_look_keys": ["KEY_TAB", "KEY_M"],
+  "movement_joystick": {
     "slot": 0,
     "shape": "circle",
     "x": 360,
     "y": 760,
     "radius": 170,
-    "random_percent": 60
+    "dead_zone_percent": 10,
+    "max_deflection_percent": 100
   },
-  "view_joystick": {
+  "look_joystick": {
     "slot": 1,
     "shape": "circle",
     "x": 2000,
     "y": 750,
     "radius": 150,
-    "random_percent": 60
+    "dead_zone_percent": 10,
+    "max_deflection_percent": 100
   },
   "keys": [
     {
       "slot": 2,
+      "key": "BTN_LEFT",
+      "shape": "circle",
+      "x": 2100,
+      "y": 700,
+      "radius": 80,
+      "random_percent": 60
+    },
+    {
+      "slot": 2,
+      "key": "KEY_SPACE",
       "shape": "circle",
       "x": 2140,
       "y": 560,
       "radius": 70,
-      "random_percent": 60,
-      "key": "KEY_SPACE"
+      "random_percent": 60
+    },
+    {
+      "slot": 2,
+      "key": "KEY_TAB",
+      "shape": "rect",
+      "x": 100,
+      "y": 100,
+      "width": 120,
+      "height": 120,
+      "random_percent": 50,
+      "release_movement": true,
+      "release_look": true
     }
   ]
 }

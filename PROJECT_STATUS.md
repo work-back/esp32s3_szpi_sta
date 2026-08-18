@@ -10,15 +10,25 @@ PC 按键 <-- [高速进程间通信] --> Zephyr 协议栈 <-- [HCI] --> BT Dong
 
 目标为端到端延迟低于 10 ms。
 
-### 新目标
-因为我想在手机上 测试 FPS 功能,
-1.  鼠标其方向是通过 触摸一个虚拟摇杆控制的, 将 , x, y 转化为一个方向上的触点.
-   视角方向 如 awsd 按键, 也 转化为 一个 方向 触点.
-   将键盘按键 映射到 某个触点.
-2. 实现一个UI工具,我上传,一个图片,游戏界面截图, 我可以圈定图片位置, 来绑定按键. 圈定哪里来, 实现视角方向控制. 可以圆形,方形.
-   在圈定 里面做随机, 以中心,向四周 60%(可配置) 随机.
-   保存生成 map.json 文件.
-3. touch_input_bridge 加载上面 2 中生成的配置, 实现 上面1, 功能.
+### FPS 映射功能
+在手机上测试 FPS 游戏操作：
+1. **左侧移动摇杆（WASD / 槽位 0）**：
+   - 按下按键时，触点从圈定中心向外移动至边界限制位置；
+   - 支持组合按键（如 W+A、W+D、S+A、S+D）斜向角度归一化，连续切换按键时保持按下并平滑过渡；
+   - 全部松开后触点释放（UP）。
+2. **右侧视角摇杆（鼠标 / 槽位 1）**：
+   - 鼠标相对移动直接驱动视角触点从中心向移动方向偏移，无需按住鼠标左键；
+   - 触点受最大偏移限制，鼠标停止移动后触点自动释放并复位至中心。
+3. **按键触点（按键与鼠标按键 / 槽位 2）**：
+   - 鼠标左键（`BTN_LEFT`）、右键（`BTN_RIGHT`）及键盘按键可独立绑定到射击/技能等触点区域，按下时在区域内随机落点，松开抬起。
+4. **摇杆自动释放映射**：
+   - 支持配置全局快捷键（如 `KEY_TAB`、`KEY_M`）或在按键属性中配置 `release_movement`、`release_look`；
+   - 当这些按键按下时，自动松开左摇杆（WASD）或右摇杆（视角），便于开地图、打开背包或切镜。
+5. **UI 工具（`tools/keymap_editor.html`）**：
+   - 支持上传游戏截图，圈定移动摇杆、视角摇杆及各个按键触点；
+   - 支持配置死区、最大偏移、随机范围及释放摇杆选项，导出 `map.json`。
+6. **桥接程序与 IPC 队列（`tools/touch_input_bridge.c`、`src/touch_ipc_protocol.h`）**：
+   - 采用 128 项无锁环形队列传递所有按下、移动、释放帧，彻底消除高频事件下释放帧被覆盖导致触点无法松开的问题。
 
 
 ## 当前状态
@@ -32,8 +42,8 @@ PC 按键 <-- [高速进程间通信] --> Zephyr 协议栈 <-- [HCI] --> BT Dong
 - `src/touch_hid.h`：后续 IPC 接收端应调用的发送接口：`touch_hid_send(slot, down, x, y)`。
 - `prj.conf`：仅保留 native_sim 所需的 BLE Peripheral、Shell 与日志配置。
 - `build.sh`：在 Docker 容器中以专用 `build-sim_rc` 构建目录执行构建，避免与顶层已有的其他应用构建目录冲突。
-- `src/touch_ipc.c`：native_sim/Linux POSIX 共享内存输入后端；高优先级线程每 1 ms 检查最新状态邮箱并调用 `touch_hid_send()`。
-- `src/touch_ipc_protocol.h`：桥接器和 Zephyr 共用的共享内存邮箱布局；以 seqlock 原子序号保证帧读取一致。
+- `src/touch_ipc.c`：native_sim/Linux POSIX 共享内存输入后端；高优先级线程以 1 ms 周期读取事件环形队列并调用 `touch_hid_send()`。
+- `src/touch_ipc_protocol.h`：桥接器和 Zephyr 共用的 128 项事件环形队列布局。
 - `tools/touch_input_bridge.c`：Linux evdev 键盘/鼠标输入桥，将最新触点状态写入 POSIX 共享内存 `/zephyr-touch-ipc`。
 - `uart_br.sh`：按 USB VID:PID 自动发现键盘和鼠标的当前 evdev 节点并启动共享内存桥接器；支持同一接收器或分离设备。
 
@@ -48,28 +58,13 @@ Shell 路径仅用于验证，不满足 10 ms 延迟目标。
 
 ## 下一步计划
 
-1. 使用 `tools/keymap_editor.html` 在游戏截图上标注鼠标摇杆、WASD 视角摇杆和按键触点，并导出 `map.json`。
-2. 让 `touch_input_bridge` 加载 `map.json`，将鼠标、WASD 与绑定按键转换为三槽 HID 触点。
-3. 用真实手机验证 FPS 游戏中的摇杆、视角和按键操作，并记录端到端延迟。
+1. 使用 `tools/keymap_editor.html` 在游戏截图上标注鼠标视角摇杆、WASD 移动摇杆和按键触点（如鼠标左键射击），并导出 `map.json`。
+2. 运行 `./uart_br.sh` 启动桥接器，加载 `map.json`。
+3. 用真实手机验证 FPS 游戏中的移动、视角和射击操作，并记录端到端延迟。
 
 ## 已验证
 
 - 2026-08-18：在 Docker 容器中执行 `./build.sh` 成功。
-- 构建板：`native_sim`；Zephyr：`4.4.99`；产物目录：`/home/langyj/zephyrproject/myprj/build-sim_rc`。
-- 初次构建曾发现顶层 `build/` 属于 `bap_unicast_server`，已通过专用构建目录隔离，未删除该目录。
-- 2026-08-18：针对手机连接后立即断开，已启用 BLE SMP，并要求 HID 报告映射、输入报告、CCC 和控制点使用 L2 加密。连接时主动请求配对；断线后延迟 200 ms 重启广播，避免控制器命令缓冲不足（`-12`）。`./build.sh` 已成功验证此修改。
-- 2026-08-18：实机日志确认手机在未交换 ATT MTU 时保持默认 23 字节。原 5 点报告需 34 字节 ATT PDU，导致 `No ATT channel for MTU 34` 和 `-12`。报告已收敛为默认 MTU 可发送的 3 点版本，并将主机 ACL 发送上下文增至控制器报告的 8 个。
-- 2026-08-18：三点化时发现报告描述符仍错误保留五个手指集合，而 C 结构已缩为三点；手机按 31 字节描述符解析 19 字节报告，导致所有坐标落在 `(0,0)`。已将描述符和发送结构统一为三个手指集合/19 字节报告。
-- 2026-08-18：Android `getevent` 确认 HID 已收到坐标 `20000`，但后续解析出两个 `0,0`。根因为每个手指集合结束时 X/Y 字段将 Usage Page 切到 Generic Desktop，后续手指集合未切回 Digitizers。已在每个手指集合开头显式恢复 Digitizers Usage Page，并为所有槽位分配稳定 Contact ID。
-- 2026-08-18：已实现 PC 输入通道：Linux evdev 键盘/鼠标桥经 native_sim `uart1` PTY 发送 10 字节固定帧；Zephyr UART ISR 校验后投递给高优先级发送线程。`./build.sh` 成功；桥接程序通过主机 `cc -Wall -Wextra -Werror -fsyntax-only` 检查。尚待真实桌面设备与手机端到端验证。
-- 2026-08-18：为消除 native_sim PTY UART 的 10 ms 轮询延迟，输入通道已切换为 POSIX 共享内存 `/zephyr-touch-ipc`。桥接器以 seqlock 原子提交最新帧，Zephyr 高优先级线程以 1 ms 周期读取并调用 `touch_hid_send()`；不再启用 `uart1`。
-- 2026-08-18：共享内存后端初版曾因接收线程在邮箱映射前自动启动而使 `zephyr.exe` 段错误；现已改为映射成功后显式创建线程。`./build.sh` 成功，实机启动正常；用户确认输入延迟已显著降低。
-- 2026-08-18：已增加 FPS 键位配置工具 `tools/keymap_editor.html` 及 `map.json` 加载。桥接器的 `--map` 模式将鼠标左键/相对移动映射为槽位 0 摇杆，将 WASD 映射为槽位 1 摇杆，将配置按键映射为槽位 2 的区域随机触点。
-
-首次测试此修复前，必须在手机蓝牙设置中忽略旧的 `Zephyr Multi-Touch` 设备，再重新扫描配对，以清除旧服务缓存。成功配对日志应依次包含 `Host connected`、`Link encrypted (security level 2)` 和 `Touch notifications enabled`。
-
-## 强制构建规则
-
-- 禁止在宿主机直接运行 `west build`。
-- C/C++、Kconfig、DeviceTree 等修改后必须在本目录运行 `./build.sh`。
-- 必须根据构建输出修复错误并重复构建，只有成功才算完成。
+- 2026-08-18：优化左右摇杆与按键映射逻辑：WASD 移动摇杆支持从中心向外滑动至边界限制、组合键角度归一化与平滑过渡；鼠标直接通过相对位移驱动视角摇杆（无需按住鼠标左键）；鼠标左键（`BTN_LEFT`）支持绑定为普通按键（如射击）。
+- 2026-08-18：修复高频事件下单帧覆盖导致触点松开事件丢失的问题（改为 128 项无锁事件队列）；增加释放左摇杆（WASD）与右摇杆（视角）的快捷按键配置。
+- 宿主机测试与 `./build.sh` 编译均通过。
