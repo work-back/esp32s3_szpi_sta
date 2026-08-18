@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
@@ -83,6 +84,8 @@ static const uint8_t report_map[] = {
 };
 
 static struct touch_report touch_report;
+/* Logical slots retain their Contact IDs; HID reports pack active contacts first. */
+static struct touch_contact touch_state[TOUCH_CONTACTS];
 static bool notifications_enabled;
 static uint8_t control_point;
 static struct bt_conn *active_conn;
@@ -231,16 +234,22 @@ int touch_hid_send(uint8_t slot, bool down, uint16_t x, uint16_t y)
 		return -EINVAL;
 	}
 
-	contact = &touch_report.contact[slot];
+	contact = &touch_state[slot];
 	contact->flags = down ? BIT(0) | BIT(1) : 0;
 	contact->id = slot;
 	contact->x = x;
 	contact->y = y;
 
+	/*
+	 * Android consumes only the first Contact Count finger collections.  The
+	 * physical order in this fixed-size report must therefore not be the
+	 * logical slot number: an isolated slot 2 contact has to be record 0.
+	 */
+	memset(&touch_report, 0, sizeof(touch_report));
 	touch_report.contact_count = 0;
 	for (size_t i = 0; i < TOUCH_CONTACTS; i++) {
-		if (touch_report.contact[i].flags & BIT(0)) {
-			touch_report.contact_count++;
+		if (touch_state[i].flags & BIT(0)) {
+			touch_report.contact[touch_report.contact_count++] = touch_state[i];
 		}
 	}
 
@@ -300,7 +309,7 @@ int touch_hid_init(void)
 	}
 
 	for (size_t i = 0; i < TOUCH_CONTACTS; i++) {
-		touch_report.contact[i].id = i;
+		touch_state[i].id = i;
 	}
 
 	start_advertising();

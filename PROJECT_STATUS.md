@@ -10,6 +10,16 @@ PC 按键 <-- [高速进程间通信] --> Zephyr 协议栈 <-- [HCI] --> BT Dong
 
 目标为端到端延迟低于 10 ms。
 
+### 新目标
+因为我想在手机上 测试 FPS 功能,
+1.  鼠标其方向是通过 触摸一个虚拟摇杆控制的, 将 , x, y 转化为一个方向上的触点.
+   视角方向 如 awsd 按键, 也 转化为 一个 方向 触点.
+   将键盘按键 映射到 某个触点.
+2. 实现一个UI工具,我上传,一个图片,游戏界面截图, 我可以圈定图片位置, 来绑定按键. 圈定哪里来, 实现视角方向控制. 可以圆形,方形.
+   在圈定 里面做随机, 以中心,向四周 60%(可配置) 随机.
+   保存生成 map.json 文件.
+3. touch_input_bridge 加载上面 2 中生成的配置, 实现 上面1, 功能.
+
 
 ## 当前状态
 
@@ -38,9 +48,9 @@ Shell 路径仅用于验证，不满足 10 ms 延迟目标。
 
 ## 下一步计划
 
-1. 在桌面会话中启动 `tools/touch_input_bridge`，用真实键盘/鼠标和 Android 手机验证按下、拖动、松开。
-2. 增加发送端与 Zephyr 接收端的单调时钟时间戳，测量主机输入到 `bt_gatt_notify()` 提交的时延。
-3. 连接真实 BLE Dongle 和手机，实测并优化端到端延迟至 10 ms 内。
+1. 使用 `tools/keymap_editor.html` 在游戏截图上标注鼠标摇杆、WASD 视角摇杆和按键触点，并导出 `map.json`。
+2. 让 `touch_input_bridge` 加载 `map.json`，将鼠标、WASD 与绑定按键转换为三槽 HID 触点。
+3. 用真实手机验证 FPS 游戏中的摇杆、视角和按键操作，并记录端到端延迟。
 
 ## 已验证
 
@@ -54,6 +64,7 @@ Shell 路径仅用于验证，不满足 10 ms 延迟目标。
 - 2026-08-18：已实现 PC 输入通道：Linux evdev 键盘/鼠标桥经 native_sim `uart1` PTY 发送 10 字节固定帧；Zephyr UART ISR 校验后投递给高优先级发送线程。`./build.sh` 成功；桥接程序通过主机 `cc -Wall -Wextra -Werror -fsyntax-only` 检查。尚待真实桌面设备与手机端到端验证。
 - 2026-08-18：为消除 native_sim PTY UART 的 10 ms 轮询延迟，输入通道已切换为 POSIX 共享内存 `/zephyr-touch-ipc`。桥接器以 seqlock 原子提交最新帧，Zephyr 高优先级线程以 1 ms 周期读取并调用 `touch_hid_send()`；不再启用 `uart1`。
 - 2026-08-18：共享内存后端初版曾因接收线程在邮箱映射前自动启动而使 `zephyr.exe` 段错误；现已改为映射成功后显式创建线程。`./build.sh` 成功，实机启动正常；用户确认输入延迟已显著降低。
+- 2026-08-18：已增加 FPS 键位配置工具 `tools/keymap_editor.html` 及 `map.json` 加载。桥接器的 `--map` 模式将鼠标左键/相对移动映射为槽位 0 摇杆，将 WASD 映射为槽位 1 摇杆，将配置按键映射为槽位 2 的区域随机触点。
 
 首次测试此修复前，必须在手机蓝牙设置中忽略旧的 `Zephyr Multi-Touch` 设备，再重新扫描配对，以清除旧服务缓存。成功配对日志应依次包含 `Host connected`、`Link encrypted (security level 2)` 和 `Touch notifications enabled`。
 

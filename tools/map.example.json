@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "screen": {
+    "width": 2400,
+    "height": 1080
+  },
+  "mouse_joystick": {
+    "slot": 0,
+    "shape": "circle",
+    "x": 360,
+    "y": 760,
+    "radius": 170,
+    "random_percent": 60
+  },
+  "view_joystick": {
+    "slot": 1,
+    "shape": "circle",
+    "x": 2000,
+    "y": 750,
+    "radius": 150,
+    "random_percent": 60
+  },
+  "keys": [
+    {
+      "slot": 2,
+      "shape": "circle",
+      "x": 2140,
+      "y": 560,
+      "radius": 70,
+      "random_percent": 60,
+      "key": "KEY_SPACE"
+    }
+  ]
+}

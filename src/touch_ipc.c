@@ -62,6 +62,7 @@ static void touch_ipc_thread(void *arg1, void *arg2, void *arg3)
 		uint16_t y;
 
 		if (read_frame(&last_sequence, &slot, &down, &x, &y)) {
+            // LOG_INF("(%d, %d)", x, y);
 			int err = touch_hid_send(slot, down, x, y);
 
 			if (err != 0 && err != -ENOTCONN) {

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FPS 触摸键位编辑器</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #17191d; color: #edf0f5; }
+    main { display: grid; grid-template-columns: 310px minmax(0, 1fr); min-height: 100vh; }
+    aside { padding: 18px; background: #22262c; border-right: 1px solid #3a4049; overflow: auto; }
+    h1 { margin: 0 0 16px; font-size: 20px; }
+    h2 { font-size: 15px; margin: 22px 0 8px; }
+    label { display: block; margin: 9px 0; font-size: 13px; color: #cbd2dc; }
+    input, select, button { box-sizing: border-box; font: inherit; }
+    input, select { width: 100%; margin-top: 4px; padding: 7px; border: 1px solid #515968; border-radius: 4px; background: #15181d; color: inherit; }
+    input[type="radio"] { width: auto; margin: 0 5px 0 0; }
+    button { padding: 8px 10px; border: 0; border-radius: 4px; color: white; background: #2e78d3; cursor: pointer; }
+    button:hover { background: #3b8ce9; } button.danger { background: #923e49; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+    #zones { padding: 0; list-style: none; }
+    #zones li { display: grid; grid-template-columns: 1fr auto; gap: 7px; padding: 8px; margin-bottom: 6px; background: #181b20; border-radius: 4px; font-size: 12px; }
+    #canvas-wrap { display: grid; place-items: center; padding: 24px; overflow: auto; }
+    canvas { max-width: 100%; max-height: calc(100vh - 48px); box-shadow: 0 2px 16px #000; cursor: crosshair; background: repeating-conic-gradient(#343a43 0 25%, #2a3038 0 50%) 50% / 24px 24px; }
+    .hint { color: #aeb8c5; font-size: 12px; line-height: 1.45; }
+    @media (max-width: 720px) { main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid #3a4049; } }
+  </style>
+</head>
+<body>
+<main>
+  <aside>
+    <h1>FPS 触摸键位编辑器</h1>
+    <input id="image" type="file" accept="image/*" hidden>
+    <button id="select-image" type="button">选择游戏截图</button>
+    <p id="image-name" class="hint">也可以将图片文件拖到右侧画布。</p>
+    <div class="row">
+      <label>屏幕宽度<input id="screen-width" type="number" min="1" value="1080"></label>
+      <label>屏幕高度<input id="screen-height" type="number" min="1" value="2400"></label>
+    </div>
+    <h2>新区域</h2>
+    <label>用途<select id="kind">
+      <option value="mouse_joystick">鼠标移动摇杆</option>
+      <option value="view_joystick">WASD 视角摇杆</option>
+      <option value="key">按键触点</option>
+    </select></label>
+    <label>形状<select id="shape"><option value="circle">圆形</option><option value="rect">方形</option></select></label>
+    <label id="key-field">绑定按键（Linux input 名称）<input id="key" value="KEY_SPACE" placeholder="KEY_SPACE"></label>
+    <label>随机范围（中心向四周 %）<input id="random-percent" type="number" min="0" max="100" value="60"></label>
+    <p class="hint">在右侧截图上拖拽创建区域。圆形使用拖拽点作为圆心，拖拽距离为半径；方形使用拖拽矩形。</p>
+    <h2>已配置区域</h2>
+    <ul id="zones"></ul>
+    <section id="zone-editor" hidden>
+      <h2>编辑选中区域</h2>
+      <div class="row"><label>X<input id="edit-x" type="number"></label><label>Y<input id="edit-y" type="number"></label></div>
+      <div class="row"><label id="edit-width-label">宽度<input id="edit-width" type="number" min="1"></label><label id="edit-height-label">高度<input id="edit-height" type="number" min="1"></label></div>
+      <label>随机范围（中心向四周 %）<input id="edit-random" type="number" min="0" max="100"></label>
+      <label id="edit-key-field">绑定按键<input id="edit-key" placeholder="KEY_SPACE"></label>
+      <p class="hint">也可直接在截图上拖拽已选中的区域移动位置。</p>
+    </section>
+    <div class="toolbar"><button id="export">导出 map.json</button><button id="clear" class="danger">清空区域</button></div>
+    <p class="hint">触点槽位固定：鼠标摇杆为 0，WASD 视角摇杆为 1，按键触点为 2。一个按键触点槽在同一时刻只发送一个按键。</p>
+  </aside>
+  <section id="canvas-wrap"><canvas id="canvas" width="1080" height="2400" aria-label="截图标注画布"></canvas></section>
+</main>
+<script>
+(() => {
+  const canvas = document.querySelector('#canvas');
+  const ctx = canvas.getContext('2d');
+  const imageInput = document.querySelector('#image');
+  const selectImageButton = document.querySelector('#select-image');
+  const imageName = document.querySelector('#image-name');
+  const widthInput = document.querySelector('#screen-width');
+  const heightInput = document.querySelector('#screen-height');
+  const kindInput = document.querySelector('#kind');
+  const shapeInput = document.querySelector('#shape');
+  const keyInput = document.querySelector('#key');
+  const randomInput = document.querySelector('#random-percent');
+  const keyField = document.querySelector('#key-field');
+  const zonesList = document.querySelector('#zones');
+  const editor = document.querySelector('#zone-editor');
+  const editX = document.querySelector('#edit-x'), editY = document.querySelector('#edit-y');
+  const editWidth = document.querySelector('#edit-width'), editHeight = document.querySelector('#edit-height');
+  const editRandom = document.querySelector('#edit-random'), editKey = document.querySelector('#edit-key');
+  const editWidthLabel = document.querySelector('#edit-width-label'), editHeightLabel = document.querySelector('#edit-height-label');
+  const editKeyField = document.querySelector('#edit-key-field');
+  let image = null, zones = [], dragStart = null, preview = null, selectedIndex = -1, moving = null;
+
+  const colors = { mouse_joystick: '#38bdf8', view_joystick: '#a78bfa', key: '#fb923c' };
+  const labels = { mouse_joystick: '鼠标摇杆', view_joystick: 'WASD 摇杆', key: '按键' };
+  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+  function screenSize() { return { width: Math.max(1, +widthInput.value || 1080), height: Math.max(1, +heightInput.value || 2400) }; }
+  function fitCanvas() { const size = screenSize(); canvas.width = size.width; canvas.height = size.height; draw(); }
+  function canvasPoint(event) { const rect = canvas.getBoundingClientRect(); return { x: clamp((event.clientX - rect.left) * canvas.width / rect.width, 0, canvas.width), y: clamp((event.clientY - rect.top) * canvas.height / rect.height, 0, canvas.height) }; }
+  function normalizedShape(start, end, shape) {
+    if (shape === 'circle') return { shape, x: start.x, y: start.y, radius: Math.max(12, Math.hypot(end.x - start.x, end.y - start.y)) };
+    return { shape, x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.max(12, Math.abs(end.x - start.x)), height: Math.max(12, Math.abs(end.y - start.y)) };
+  }
+  function drawShape(zone, alpha = 1, selected = false) {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = colors[zone.kind]; ctx.fillStyle = colors[zone.kind] + '33'; ctx.lineWidth = Math.max(2, canvas.width / 500);
+    if (zone.shape === 'circle') { ctx.beginPath(); ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = colors[zone.kind]; ctx.beginPath(); ctx.arc(zone.x, zone.y, 5, 0, Math.PI * 2); ctx.fill(); }
+    else { ctx.fillRect(zone.x, zone.y, zone.width, zone.height); ctx.strokeRect(zone.x, zone.y, zone.width, zone.height); }
+    const textX = zone.shape === 'circle' ? zone.x : zone.x + 4, textY = zone.shape === 'circle' ? zone.y - zone.radius - 6 : zone.y - 6;
+    ctx.font = `${Math.max(13, canvas.width / 45)}px sans-serif`; ctx.fillStyle = colors[zone.kind]; ctx.fillText(zone.kind === 'key' ? `${labels[zone.kind]}: ${zone.key}` : labels[zone.kind], textX, Math.max(16, textY));
+    if (selected) { ctx.setLineDash([8, 5]); ctx.strokeStyle = '#ffffff'; ctx.lineWidth += 1; if (zone.shape === 'circle') { ctx.beginPath(); ctx.arc(zone.x, zone.y, zone.radius + 5, 0, Math.PI * 2); ctx.stroke(); } else ctx.strokeRect(zone.x - 3, zone.y - 3, zone.width + 6, zone.height + 6); }
+    ctx.restore();
+  }
+  function draw() { ctx.clearRect(0, 0, canvas.width, canvas.height); if (image) ctx.drawImage(image, 0, 0, canvas.width, canvas.height); zones.forEach((zone, index) => drawShape(zone, 1, index === selectedIndex)); if (preview) drawShape(preview, .72); }
+  function syncEditor() { const zone = zones[selectedIndex]; editor.hidden = !zone; if (!zone) return; editX.value = Math.round(zone.x); editY.value = Math.round(zone.y); editRandom.value = zone.random_percent; editKeyField.hidden = zone.kind !== 'key'; editWidthLabel.firstChild.textContent = zone.shape === 'circle' ? '半径' : '宽度'; editHeightLabel.hidden = zone.shape === 'circle'; editWidth.value = Math.round(zone.shape === 'circle' ? zone.radius : zone.width); if (zone.shape !== 'circle') editHeight.value = Math.round(zone.height); editKey.value = zone.key || ''; }
+  function selectZone(index) { selectedIndex = index; syncEditor(); renderZones(); draw(); }
+  function renderZones() { zonesList.replaceChildren(...zones.map((zone, index) => { const li = document.createElement('li'), text = document.createElement('span'), button = document.createElement('button'); if (index === selectedIndex) li.style.outline = `2px solid ${colors[zone.kind]}`; text.textContent = `${labels[zone.kind]}${zone.kind === 'key' ? ` (${zone.key})` : ''}，${zone.shape}，随机 ${zone.random_percent}%`; text.onclick = () => selectZone(index); button.textContent = '删除'; button.className = 'danger'; button.onclick = () => { zones.splice(index, 1); if (selectedIndex >= zones.length) selectedIndex = zones.length - 1; syncEditor(); renderZones(); draw(); }; li.append(text, button); return li; })); }
+  function selectedZone() { return zones[selectedIndex]; }
+  function applyEditor() { const zone = selectedZone(); if (!zone) return; zone.x = +editX.value || 0; zone.y = +editY.value || 0; zone.random_percent = clamp(+editRandom.value || 0, 0, 100); if (zone.shape === 'circle') zone.radius = Math.max(1, +editWidth.value || 1); else { zone.width = Math.max(1, +editWidth.value || 1); zone.height = Math.max(1, +editHeight.value || 1); } if (zone.kind === 'key') zone.key = editKey.value.trim(); renderZones(); draw(); }
+  function hitTest(zone, point) { return zone.shape === 'circle' ? Math.hypot(point.x - zone.x, point.y - zone.y) <= zone.radius : point.x >= zone.x && point.x <= zone.x + zone.width && point.y >= zone.y && point.y <= zone.y + zone.height; }
+  function syncKind() { keyField.hidden = kindInput.value !== 'key'; }
+  function loadImage(file) { if (!file || !file.type.startsWith('image/')) return; imageName.textContent = `已加载：${file.name}`; const reader = new FileReader(); reader.onload = () => { image = new Image(); image.onload = draw; image.src = reader.result; }; reader.readAsDataURL(file); }
+  selectImageButton.onclick = () => imageInput.click();
+  imageInput.onchange = () => loadImage(imageInput.files[0]);
+  canvas.addEventListener('dragover', event => { event.preventDefault(); canvas.style.outline = '3px dashed #38bdf8'; });
+  canvas.addEventListener('dragleave', () => { canvas.style.outline = ''; });
+  canvas.addEventListener('drop', event => { event.preventDefault(); canvas.style.outline = ''; loadImage(event.dataTransfer.files[0]); });
+  widthInput.onchange = heightInput.onchange = fitCanvas; kindInput.onchange = syncKind;
+  canvas.onpointerdown = event => { const point = canvasPoint(event); const hit = [...zones.keys()].reverse().find(index => hitTest(zones[index], point)); canvas.setPointerCapture(event.pointerId); if (hit !== undefined) { selectZone(hit); moving = { point, zone: { ...zones[hit] } }; } else dragStart = point; };
+  canvas.onpointermove = event => { const point = canvasPoint(event); if (moving) { const zone = zones[selectedIndex]; zone.x = moving.zone.x + point.x - moving.point.x; zone.y = moving.zone.y + point.y - moving.point.y; syncEditor(); draw(); return; } if (!dragStart) return; preview = { kind: kindInput.value, key: keyInput.value.trim(), random_percent: clamp(+randomInput.value || 0, 0, 100), ...normalizedShape(dragStart, point, shapeInput.value) }; draw(); };
+  function finishPointer(event) { if (moving) { moving = null; renderZones(); draw(); return; } if (!dragStart) return; const zone = { kind: kindInput.value, key: keyInput.value.trim(), random_percent: clamp(+randomInput.value || 0, 0, 100), ...normalizedShape(dragStart, canvasPoint(event), shapeInput.value) }; dragStart = preview = null; if (zone.kind === 'key' && !zone.key) { draw(); return; } zones.push(zone); selectZone(zones.length - 1); }
+  canvas.onpointerup = finishPointer; canvas.onpointercancel = finishPointer;
+  [editX, editY, editWidth, editHeight, editRandom, editKey].forEach(input => input.oninput = applyEditor);
+  document.querySelector('#clear').onclick = () => { zones = []; selectedIndex = -1; syncEditor(); renderZones(); draw(); };
+  document.querySelector('#export').onclick = () => {
+    const size = screenSize(); const map = { version: 1, screen: size, mouse_joystick: null, view_joystick: null, keys: [] };
+    const region = zone => zone.shape === 'circle'
+      ? { shape: 'circle', x: Math.round(zone.x), y: Math.round(zone.y), radius: Math.round(zone.radius), random_percent: zone.random_percent }
+      : { shape: 'rect', x: Math.round(zone.x), y: Math.round(zone.y), width: Math.round(zone.width), height: Math.round(zone.height), random_percent: zone.random_percent };
+    for (const zone of zones) {
+      if (zone.kind === 'mouse_joystick') map.mouse_joystick = { slot: 0, ...region(zone) };
+      else if (zone.kind === 'view_joystick') map.view_joystick = { slot: 1, ...region(zone) };
+      else map.keys.push({ slot: 2, key: zone.key, ...region(zone) });
+    }
+    const blob = new Blob([JSON.stringify(map, null, 2) + '\n'], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'map.json'; link.click(); URL.revokeObjectURL(link.href);
+  };
+  syncKind(); fitCanvas();
+})();
+</script>
+</body>
+</html>

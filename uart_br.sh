@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-set -x
+# set -x
 
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 BRIDGE_SOURCE="$ROOT_DIR/tools/touch_input_bridge.c"
