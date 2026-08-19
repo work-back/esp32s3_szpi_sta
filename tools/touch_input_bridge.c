@@ -65,6 +65,7 @@ struct mapped_key {
 struct touch_map {
 	int width;
 	int height;
+	int layout_rotation;
 	bool has_movement;
 	bool has_look;
 	struct touch_region movement;
@@ -321,6 +322,9 @@ static bool load_map(const char *path, struct touch_map *map)
 	if (!json_int(document, "version", &version) || version != 3) goto out;
 	object = json_named_object(document, "screen", &end);
 	if (!object || !json_int(object, "width", &map->width) || !json_int(object, "height", &map->height) || map->width <= 0 || map->height <= 0) goto out;
+	json_int_default(document, "layout_rotation", &map->layout_rotation, 0);
+	if (map->layout_rotation != 0 && map->layout_rotation != 90 &&
+	    map->layout_rotation != 180 && map->layout_rotation != 270) goto out;
 	if ((object = json_named_object(document, "movement_joystick", &end))) map->has_movement = parse_movement_region(object, &map->movement);
 	if ((object = json_named_object(document, "look_touch", &end))) map->has_look = parse_look_region(object, map);
 	parse_key_array(document, "release_movement_keys", map->release_movement_keys, &map->release_movement_count, MAP_MAX_RELEASE_KEYS);
@@ -422,6 +426,30 @@ static void random_point_in_circle(int center_x, int center_y, int radius, int *
 	*y = center_y + dy;
 }
 
+static void rotate_input_vector(const struct touch_map *map, int *x, int *y)
+{
+	int old_x = *x;
+	int old_y = *y;
+
+	/* 静态布局旋转后，WASD 和鼠标的动态位移也必须沿相同方向旋转。 */
+	switch (map->layout_rotation) {
+	case 90:
+		*x = -old_y;
+		*y = old_x;
+		break;
+	case 180:
+		*x = -old_x;
+		*y = -old_y;
+		break;
+	case 270:
+		*x = old_y;
+		*y = -old_x;
+		break;
+	default:
+		break;
+	}
+}
+
 static int update_movement(struct bridge *bridge, const struct touch_map *map, struct movement_state *mov)
 {
 	int dir_x = (mov->wasd_d ? 1 : 0) - (mov->wasd_a ? 1 : 0);
@@ -440,6 +468,7 @@ static int update_movement(struct bridge *bridge, const struct touch_map *map, s
 		}
 		return 0;
 	}
+	rotate_input_vector(map, &dir_x, &dir_y);
 
 	int length = random_between(map->movement.start_radius + 1, map->movement.radius);
 	int target_dx;
@@ -564,6 +593,7 @@ static void limit_look_segment(const struct touch_region *region, int start_x, i
 static int update_look(struct bridge *bridge, const struct touch_map *map,
 		       struct look_state *look, int dx, int dy)
 {
+	rotate_input_vector(map, &dx, &dy);
 	int remaining_x = dx;
 	int remaining_y = dy;
 

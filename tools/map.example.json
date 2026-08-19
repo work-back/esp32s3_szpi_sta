@@ -4,6 +4,7 @@
     "width": 2400,
     "height": 1080
   },
+  "layout_rotation": 0,
   "release_movement_keys": ["KEY_TAB", "KEY_M"],
   "release_look_keys": ["KEY_TAB", "KEY_M"],
   "movement_joystick": {

@@ -303,11 +303,8 @@ class CanvasWidget(QWidget):
             file_path = urls[0].toLocalFile()
             if self.load_image(file_path):
                 win = self.window()
-                if hasattr(win, 'lbl_image_info'):
-                    win.lbl_image_info.setText(f"已加载: {os.path.basename(file_path)} ({self.image.width()}x{self.image.height()})")
-                if hasattr(win, 'spin_width') and hasattr(win, 'spin_height'):
-                    win.spin_width.setValue(self.image.width())
-                    win.spin_height.setValue(self.image.height())
+                if hasattr(win, 'handle_image_loaded'):
+                    win.handle_image_loaded()
 
     def get_transform(self):
         w = self.width()
@@ -744,6 +741,7 @@ class CanvasWidget(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.layout_rotation = 0
         self.setWindowTitle("FPS 触摸键位编辑器 (PyQt Desktop Studio)")
         self.resize(1380, 880)
         self.setMinimumSize(1024, 680)
@@ -1085,6 +1083,20 @@ class MainWindow(QMainWindow):
         self.spin_height.valueChanged.connect(self.on_screen_size_changed)
         res_grid.addWidget(self.spin_height, 1, 3)
 
+        self.btn_rotate_layout_cw = QPushButton("↻ 整体右转 90°")
+        self.btn_rotate_layout_cw.setToolTip("旋转全部按键、摇杆和视角区域，并交换屏幕宽高。")
+        self.btn_rotate_layout_cw.clicked.connect(lambda: self.rotate_layout(clockwise=True))
+        res_grid.addWidget(self.btn_rotate_layout_cw, 2, 0, 1, 2)
+
+        self.btn_rotate_layout_ccw = QPushButton("↺ 整体左转 90°")
+        self.btn_rotate_layout_ccw.setToolTip("旋转全部按键、摇杆和视角区域，并交换屏幕宽高。")
+        self.btn_rotate_layout_ccw.clicked.connect(lambda: self.rotate_layout(clockwise=False))
+        res_grid.addWidget(self.btn_rotate_layout_ccw, 2, 2, 1, 2)
+
+        self.lbl_layout_rotation = QLabel("布局方向: 0°（输入不旋转）")
+        self.lbl_layout_rotation.setStyleSheet("color: #94a3b8; font-size: 10px;")
+        res_grid.addWidget(self.lbl_layout_rotation, 3, 0, 1, 4)
+
         side_layout.addWidget(res_card)
 
         scroll.setWidget(sidebar)
@@ -1256,11 +1268,22 @@ class MainWindow(QMainWindow):
         )
         if path:
             if self.canvas.load_image(path):
-                self.lbl_image_info.setText(f"已加载: {os.path.basename(path)} ({self.canvas.image.width()}x{self.canvas.image.height()})")
-                self.spin_width.setValue(self.canvas.image.width())
-                self.spin_height.setValue(self.canvas.image.height())
+                self.handle_image_loaded()
             else:
                 QMessageBox.warning(self, "加载失败", "无法读取选择的图片文件。")
+
+    def handle_image_loaded(self):
+        image_width = self.canvas.image.width()
+        image_height = self.canvas.image.height()
+        self.lbl_image_info.setText(f"已加载: {os.path.basename(self.canvas.image_path)} ({image_width}x{image_height})")
+        if not self.canvas.zones:
+            self.spin_width.setValue(image_width)
+            self.spin_height.setValue(image_height)
+        elif image_width != self.spin_width.value() or image_height != self.spin_height.value():
+            QMessageBox.information(
+                self, "已保留布局坐标", "截图尺寸与当前布局不同。为避免按键位置被压缩，未自动改分辨率。\n"
+                "若整屏从竖屏变横屏，请先使用“整体左/右转 90°”，再点击“贴合截图尺寸”。"
+            )
 
     def on_fit_image_res_clicked(self):
         if self.canvas.image and not self.canvas.image.isNull():
@@ -1272,6 +1295,47 @@ class MainWindow(QMainWindow):
         h = self.spin_height.value()
         self.canvas.set_screen_size(w, h)
         self.lbl_status_res.setText(f"分辨率: {w} x {h}")
+
+    def rotate_layout(self, clockwise):
+        """Rotate the complete screenshot-coordinate layout, not just a single control."""
+        old_width = self.spin_width.value()
+        old_height = self.spin_height.value()
+
+        for zone in self.canvas.zones:
+            if zone.shape == "circle":
+                old_x, old_y = zone.x, zone.y
+                if clockwise:
+                    zone.x = old_height - old_y
+                    zone.y = old_x
+                else:
+                    zone.x = old_y
+                    zone.y = old_width - old_x
+            else:
+                old_x, old_y = zone.x, zone.y
+                old_zone_width, old_zone_height = zone.width, zone.height
+                if clockwise:
+                    zone.x = old_height - (old_y + old_zone_height)
+                    zone.y = old_x
+                else:
+                    zone.x = old_y
+                    zone.y = old_width - (old_x + old_zone_width)
+                zone.width = old_zone_height
+                zone.height = old_zone_width
+
+        new_width, new_height = old_height, old_width
+        self.layout_rotation = (self.layout_rotation + (90 if clockwise else -90)) % 360
+        self.spin_width.blockSignals(True)
+        self.spin_height.blockSignals(True)
+        self.spin_width.setValue(new_width)
+        self.spin_height.setValue(new_height)
+        self.spin_width.blockSignals(False)
+        self.spin_height.blockSignals(False)
+        self.canvas.set_screen_size(new_width, new_height)
+        self.lbl_status_res.setText(f"分辨率: {new_width} x {new_height}")
+        self.lbl_layout_rotation.setText(f"布局方向: {self.layout_rotation}°（摇杆与鼠标同步转换）")
+        self.sync_zone_list()
+        self.sync_form_from_selection()
+        self.canvas.update()
 
     def on_type_card_clicked(self, btn):
         for b, kind in self.type_cards:
@@ -1522,6 +1586,13 @@ class MainWindow(QMainWindow):
                 self.spin_width.setValue(screen["width"])
                 self.spin_height.setValue(screen["height"])
 
+            self.layout_rotation = data.get("layout_rotation", 0)
+            if self.layout_rotation not in (0, 90, 180, 270):
+                raise ValueError("layout_rotation 仅支持 0、90、180、270")
+            self.lbl_layout_rotation.setText(
+                f"布局方向: {self.layout_rotation}°（摇杆与鼠标同步转换）"
+            )
+
             rel_mov = data.get("release_movement_keys", [])
             rel_look = data.get("release_look_keys", [])
             self.edit_global_rel_mov.setText(", ".join(rel_mov))
@@ -1610,6 +1681,7 @@ class MainWindow(QMainWindow):
                 "width": self.spin_width.value(),
                 "height": self.spin_height.value(),
             },
+            "layout_rotation": self.layout_rotation,
             "release_movement_keys": parse_key_list(self.edit_global_rel_mov.text()),
             "release_look_keys": parse_key_list(self.edit_global_rel_look.text()),
             "movement_joystick": None,
