@@ -126,7 +126,9 @@ QUICK_KEYS = [
 class TouchZone:
     def __init__(self, kind="key", shape="circle", x=0, y=0, radius=50, width=100, height=100,
                  key="KEY_SPACE", dead_zone_percent=10, max_deflection_percent=100,
-                 random_percent=60, release_movement=False, release_look=False):
+                 random_percent=60, start_radius=30, enter_min_delay_us=800,
+                 enter_max_delay_us=2200, turn_min_delay_us=400, turn_max_delay_us=1400,
+                 release_movement=False, release_look=False):
         self.kind = kind
         self.shape = shape
         self.x = int(x)
@@ -138,6 +140,11 @@ class TouchZone:
         self.dead_zone_percent = int(dead_zone_percent)
         self.max_deflection_percent = int(max_deflection_percent)
         self.random_percent = int(random_percent)
+        self.start_radius = max(0, min(int(start_radius), self.radius - 1)) if self.shape == "circle" else 0
+        self.enter_min_delay_us = int(enter_min_delay_us)
+        self.enter_max_delay_us = int(enter_max_delay_us)
+        self.turn_min_delay_us = int(turn_min_delay_us)
+        self.turn_max_delay_us = int(turn_max_delay_us)
         self.release_movement = bool(release_movement)
         self.release_look = bool(release_look)
 
@@ -153,6 +160,7 @@ class TouchZone:
     def clamp_to_screen(self, max_w, max_h):
         if self.shape == "circle":
             self.radius = max(5, min(self.radius, int(min(max_w, max_h) / 2)))
+            self.start_radius = max(0, min(self.start_radius, self.radius - 1))
             self.x = max(self.radius, min(self.x, max_w - self.radius))
             self.y = max(self.radius, min(self.y, max_h - self.radius))
         else:
@@ -246,6 +254,11 @@ class CanvasWidget(QWidget):
         self.new_key = "BTN_LEFT"
         self.new_dead_percent = 10
         self.new_max_percent = 100
+        self.new_start_radius = 30
+        self.new_enter_min_delay_us = 800
+        self.new_enter_max_delay_us = 2200
+        self.new_turn_min_delay_us = 400
+        self.new_turn_max_delay_us = 1400
         self.new_random_percent = 60
         self.new_rel_movement = False
         self.new_rel_look = False
@@ -440,8 +453,14 @@ class CanvasWidget(QWidget):
             r = zone.radius * s
             painter.drawEllipse(QPointF(cx, cy), r, r)
 
-            # Dead zone & limit
-            if zone.kind != "key":
+            if zone.kind == "movement_joystick":
+                start_r = zone.start_radius * s
+                start_pen = QPen(QColor(255, 255, 255, 185), 1,
+                                 get_qt_enum(Qt.PenStyle if hasattr(Qt, 'PenStyle') else Qt, 'DashLine'))
+                painter.setPen(start_pen)
+                painter.setBrush(get_qt_enum(Qt.BrushStyle if hasattr(Qt, 'BrushStyle') else Qt, 'NoBrush'))
+                painter.drawEllipse(QPointF(cx, cy), start_r, start_r)
+            elif zone.kind == "look_joystick":
                 dead_r = r * zone.dead_zone_percent / 100.0
                 limit_r = r * zone.max_deflection_percent / 100.0
                 if dead_r > 1:
@@ -487,7 +506,9 @@ class CanvasWidget(QWidget):
 
         # Render Label Inside the Shape
         label_str = LABEL_MAP.get(zone.kind, zone.kind)
-        if zone.kind == "key":
+        if zone.kind == "movement_joystick":
+            label_str = "S · 落点\nE · 方向"
+        elif zone.kind == "key":
             label_str = f"{zone.key}"
             if zone.release_movement or zone.release_look:
                 extra = []
@@ -610,6 +631,7 @@ class CanvasWidget(QWidget):
                 max_allow_r = min(zone.x, self.screen_width - zone.x, zone.y, self.screen_height - zone.y)
                 req_r = int(math.hypot(sx - zone.x, sy - zone.y))
                 zone.radius = max(5, min(req_r, max_allow_r))
+                zone.start_radius = min(zone.start_radius, zone.radius - 1)
                 self.zones_changed.emit()
                 self.update()
             elif self.drag_mode.startswith("resize_"):
@@ -680,6 +702,11 @@ class CanvasWidget(QWidget):
                 key=self.new_key,
                 dead_zone_percent=self.new_dead_percent,
                 max_deflection_percent=self.new_max_percent,
+                start_radius=self.new_start_radius,
+                enter_min_delay_us=self.new_enter_min_delay_us,
+                enter_max_delay_us=self.new_enter_max_delay_us,
+                turn_min_delay_us=self.new_turn_min_delay_us,
+                turn_max_delay_us=self.new_turn_max_delay_us,
                 random_percent=self.new_random_percent,
                 release_movement=self.new_rel_movement,
                 release_look=self.new_rel_look,
@@ -699,6 +726,11 @@ class CanvasWidget(QWidget):
                 key=self.new_key,
                 dead_zone_percent=self.new_dead_percent,
                 max_deflection_percent=self.new_max_percent,
+                start_radius=self.new_start_radius,
+                enter_min_delay_us=self.new_enter_min_delay_us,
+                enter_max_delay_us=self.new_enter_max_delay_us,
+                turn_min_delay_us=self.new_turn_min_delay_us,
+                turn_max_delay_us=self.new_turn_max_delay_us,
                 random_percent=self.new_random_percent,
                 release_movement=self.new_rel_movement,
                 release_look=self.new_rel_look,
@@ -895,9 +927,60 @@ class MainWindow(QMainWindow):
         k_layout.addWidget(self.chk_rel_look, 2, 3)
         param_vbox.addWidget(self.widget_key_selector)
 
-        # Joystick parameters
-        self.widget_joy_params = QWidget()
-        j_layout = QGridLayout(self.widget_joy_params)
+        # Movement joystick: concentric S (random landing) and E (direction limit) circles.
+        self.widget_movement_params = QWidget()
+        movement_layout = QGridLayout(self.widget_movement_params)
+        movement_layout.setContentsMargins(0, 0, 0, 0)
+        movement_layout.setHorizontalSpacing(6)
+        movement_layout.setVerticalSpacing(5)
+
+        movement_layout.addWidget(QLabel("S 半径"), 0, 0)
+        self.spin_start_radius = QSpinBox()
+        self.spin_start_radius.setRange(0, 5000)
+        self.spin_start_radius.setSuffix(" px")
+        self.spin_start_radius.setValue(30)
+        self.spin_start_radius.valueChanged.connect(self.on_start_radius_changed)
+        movement_layout.addWidget(self.spin_start_radius, 0, 1)
+
+        movement_layout.addWidget(QLabel("S→E"), 1, 0)
+        self.spin_enter_delay = QSpinBox()
+        self.spin_enter_delay.setRange(0, 100000)
+        self.spin_enter_delay.setSuffix(" μs")
+        self.spin_enter_delay.setValue(800)
+        self.spin_enter_delay.valueChanged.connect(self.on_enter_delay_changed)
+        movement_layout.addWidget(self.spin_enter_delay, 1, 1)
+        movement_layout.addWidget(QLabel("至"), 1, 2)
+        self.spin_enter_delay_max = QSpinBox()
+        self.spin_enter_delay_max.setRange(0, 100000)
+        self.spin_enter_delay_max.setSuffix(" μs")
+        self.spin_enter_delay_max.setValue(2200)
+        self.spin_enter_delay_max.valueChanged.connect(self.on_enter_delay_max_changed)
+        movement_layout.addWidget(self.spin_enter_delay_max, 1, 3)
+
+        movement_layout.addWidget(QLabel("转向"), 2, 0)
+        self.spin_turn_delay = QSpinBox()
+        self.spin_turn_delay.setRange(0, 100000)
+        self.spin_turn_delay.setSuffix(" μs")
+        self.spin_turn_delay.setValue(400)
+        self.spin_turn_delay.valueChanged.connect(self.on_turn_delay_changed)
+        movement_layout.addWidget(self.spin_turn_delay, 2, 1)
+        movement_layout.addWidget(QLabel("至"), 2, 2)
+        self.spin_turn_delay_max = QSpinBox()
+        self.spin_turn_delay_max.setRange(0, 100000)
+        self.spin_turn_delay_max.setSuffix(" μs")
+        self.spin_turn_delay_max.setValue(1400)
+        self.spin_turn_delay_max.valueChanged.connect(self.on_turn_delay_max_changed)
+        movement_layout.addWidget(self.spin_turn_delay_max, 2, 3)
+
+        movement_hint = QLabel("S 内随机落点；方向长度随机落在 S 外、E 内。E 半径直接拖动外圈修改。")
+        movement_hint.setStyleSheet("color: #94a3b8; font-size: 10px;")
+        movement_hint.setWordWrap(True)
+        movement_layout.addWidget(movement_hint, 3, 0, 1, 4)
+        param_vbox.addWidget(self.widget_movement_params)
+
+        # Look joystick parameters
+        self.widget_look_params = QWidget()
+        j_layout = QGridLayout(self.widget_look_params)
         j_layout.setContentsMargins(0, 0, 0, 0)
         j_layout.setHorizontalSpacing(6)
         j_layout.setVerticalSpacing(5)
@@ -917,7 +1000,7 @@ class MainWindow(QMainWindow):
         self.spin_max.setValue(100)
         self.spin_max.valueChanged.connect(self.on_max_changed)
         j_layout.addWidget(self.spin_max, 0, 3)
-        param_vbox.addWidget(self.widget_joy_params)
+        param_vbox.addWidget(self.widget_look_params)
 
         side_layout.addWidget(self.param_card)
 
@@ -1191,12 +1274,17 @@ class MainWindow(QMainWindow):
             if b == btn:
                 self.canvas.new_kind = kind
                 break
+        if self.canvas.new_kind == "movement_joystick":
+            self.canvas.new_shape = "circle"
+            self.btn_shape_circle.setChecked(True)
         self.update_type_ui_state()
 
     def update_type_ui_state(self):
         is_key = (self.canvas.new_kind == "key")
         self.widget_key_selector.setVisible(is_key)
-        self.widget_joy_params.setVisible(not is_key)
+        self.widget_movement_params.setVisible(self.canvas.new_kind == "movement_joystick")
+        self.widget_look_params.setVisible(self.canvas.new_kind == "look_joystick")
+        self.btn_shape_rect.setEnabled(self.canvas.new_kind != "movement_joystick")
 
     def on_shape_btn_clicked(self, btn):
         if btn == self.btn_shape_circle:
@@ -1235,6 +1323,26 @@ class MainWindow(QMainWindow):
         self.canvas.new_max_percent = val
         self.apply_to_selected_if_any()
 
+    def on_start_radius_changed(self, val):
+        self.canvas.new_start_radius = val
+        self.apply_to_selected_if_any()
+
+    def on_enter_delay_changed(self, val):
+        self.canvas.new_enter_min_delay_us = val
+        self.apply_to_selected_if_any()
+
+    def on_enter_delay_max_changed(self, val):
+        self.canvas.new_enter_max_delay_us = val
+        self.apply_to_selected_if_any()
+
+    def on_turn_delay_changed(self, val):
+        self.canvas.new_turn_min_delay_us = val
+        self.apply_to_selected_if_any()
+
+    def on_turn_delay_max_changed(self, val):
+        self.canvas.new_turn_max_delay_us = val
+        self.apply_to_selected_if_any()
+
     def on_rel_mov_toggled(self, checked):
         self.canvas.new_rel_movement = checked
         self.apply_to_selected_if_any()
@@ -1252,6 +1360,12 @@ class MainWindow(QMainWindow):
                 zone.random_percent = self.spin_random.value()
                 zone.release_movement = self.chk_rel_mov.isChecked()
                 zone.release_look = self.chk_rel_look.isChecked()
+            elif zone.kind == "movement_joystick":
+                zone.start_radius = min(self.spin_start_radius.value(), zone.radius - 1)
+                zone.enter_min_delay_us = self.spin_enter_delay.value()
+                zone.enter_max_delay_us = max(zone.enter_min_delay_us, self.spin_enter_delay_max.value())
+                zone.turn_min_delay_us = self.spin_turn_delay.value()
+                zone.turn_max_delay_us = max(zone.turn_min_delay_us, self.spin_turn_delay_max.value())
             else:
                 zone.dead_zone_percent = self.spin_dead.value()
                 zone.max_deflection_percent = self.spin_max.value()
@@ -1312,6 +1426,24 @@ class MainWindow(QMainWindow):
                 self.spin_random.blockSignals(False)
                 self.chk_rel_mov.blockSignals(False)
                 self.chk_rel_look.blockSignals(False)
+            elif zone.kind == "movement_joystick":
+                self.spin_start_radius.blockSignals(True)
+                self.spin_enter_delay.blockSignals(True)
+                self.spin_enter_delay_max.blockSignals(True)
+                self.spin_turn_delay.blockSignals(True)
+                self.spin_turn_delay_max.blockSignals(True)
+
+                self.spin_start_radius.setValue(zone.start_radius)
+                self.spin_enter_delay.setValue(zone.enter_min_delay_us)
+                self.spin_enter_delay_max.setValue(zone.enter_max_delay_us)
+                self.spin_turn_delay.setValue(zone.turn_min_delay_us)
+                self.spin_turn_delay_max.setValue(zone.turn_max_delay_us)
+
+                self.spin_start_radius.blockSignals(False)
+                self.spin_enter_delay.blockSignals(False)
+                self.spin_enter_delay_max.blockSignals(False)
+                self.spin_turn_delay.blockSignals(False)
+                self.spin_turn_delay_max.blockSignals(False)
             else:
                 self.spin_dead.blockSignals(True)
                 self.spin_max.blockSignals(True)
@@ -1399,14 +1531,17 @@ class MainWindow(QMainWindow):
             if mov:
                 new_zones.append(TouchZone(
                     kind="movement_joystick",
-                    shape=mov.get("shape", "circle"),
+                    shape="circle",
                     x=mov.get("x", 0),
                     y=mov.get("y", 0),
                     radius=mov.get("radius", 100),
                     width=mov.get("width", 100),
                     height=mov.get("height", 100),
-                    dead_zone_percent=mov.get("dead_zone_percent", 10),
-                    max_deflection_percent=mov.get("max_deflection_percent", 100),
+                    start_radius=mov["start_radius"],
+                    enter_min_delay_us=mov["enter_min_delay_us"],
+                    enter_max_delay_us=mov["enter_max_delay_us"],
+                    turn_min_delay_us=mov["turn_min_delay_us"],
+                    turn_max_delay_us=mov["turn_max_delay_us"],
                 ))
 
             look = data.get("look_joystick")
@@ -1481,8 +1616,11 @@ class MainWindow(QMainWindow):
             if zone.kind == "movement_joystick":
                 data["movement_joystick"] = {
                     "slot": 0,
-                    "dead_zone_percent": zone.dead_zone_percent,
-                    "max_deflection_percent": zone.max_deflection_percent,
+                    "start_radius": zone.start_radius,
+                    "enter_min_delay_us": zone.enter_min_delay_us,
+                    "enter_max_delay_us": zone.enter_max_delay_us,
+                    "turn_min_delay_us": zone.turn_min_delay_us,
+                    "turn_max_delay_us": zone.turn_max_delay_us,
                     **region
                 }
             elif zone.kind == "look_joystick":

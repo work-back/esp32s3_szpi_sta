@@ -12,8 +12,11 @@
     "x": 360,
     "y": 760,
     "radius": 170,
-    "dead_zone_percent": 10,
-    "max_deflection_percent": 100
+    "start_radius": 24,
+    "enter_min_delay_us": 800,
+    "enter_max_delay_us": 2200,
+    "turn_min_delay_us": 400,
+    "turn_max_delay_us": 1400
   },
   "look_joystick": {
     "slot": 1,

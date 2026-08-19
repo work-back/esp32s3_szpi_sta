@@ -44,9 +44,14 @@ struct touch_region {
 	int width;
 	int height;
 	int radius;
+	int start_radius;
 	int random_percent;
 	int dead_zone_percent;
 	int max_deflection_percent;
+	int enter_min_delay_us;
+	int enter_max_delay_us;
+	int turn_min_delay_us;
+	int turn_max_delay_us;
 };
 
 struct mapped_key {
@@ -219,6 +224,27 @@ static bool parse_region(const char *object, struct touch_region *region)
 		json_int(object, "width", &region->width) && json_int(object, "height", &region->height) && region->width > 0 && region->height > 0;
 }
 
+static bool parse_movement_region(const char *object, struct touch_region *region)
+{
+	char shape[12];
+
+	if (!json_string(object, "shape", shape, sizeof(shape)) || strcmp(shape, "circle") ||
+	    !json_int(object, "x", &region->x) || !json_int(object, "y", &region->y) ||
+	    !json_int(object, "radius", &region->radius) || region->radius <= 1 ||
+	    !json_int(object, "start_radius", &region->start_radius) ||
+	    !json_int(object, "enter_min_delay_us", &region->enter_min_delay_us) ||
+	    !json_int(object, "enter_max_delay_us", &region->enter_max_delay_us) ||
+	    !json_int(object, "turn_min_delay_us", &region->turn_min_delay_us) ||
+	    !json_int(object, "turn_max_delay_us", &region->turn_max_delay_us)) return false;
+
+	region->circle = true;
+	return region->start_radius >= 0 && region->start_radius < region->radius &&
+		region->enter_min_delay_us >= 0 &&
+		region->enter_max_delay_us >= region->enter_min_delay_us &&
+		region->turn_min_delay_us >= 0 &&
+		region->turn_max_delay_us >= region->turn_min_delay_us;
+}
+
 static unsigned int key_code(const char *name)
 {
 	if (!strcmp(name, "BTN_LEFT")) return BTN_LEFT;
@@ -298,7 +324,7 @@ static bool load_map(const char *path, struct touch_map *map)
 	if (!json_int(document, "version", &version) || version != 2) goto out;
 	object = json_named_object(document, "screen", &end);
 	if (!object || !json_int(object, "width", &map->width) || !json_int(object, "height", &map->height) || map->width <= 0 || map->height <= 0) goto out;
-	if ((object = json_named_object(document, "movement_joystick", &end))) map->has_movement = parse_region(object, &map->movement);
+	if ((object = json_named_object(document, "movement_joystick", &end))) map->has_movement = parse_movement_region(object, &map->movement);
 	if ((object = json_named_object(document, "look_joystick", &end))) map->has_look = parse_region(object, &map->look);
 	parse_key_array(document, "release_movement_keys", map->release_movement_keys, &map->release_movement_count, MAP_MAX_RELEASE_KEYS);
 	parse_key_array(document, "release_look_keys", map->release_look_keys, &map->release_look_count, MAP_MAX_RELEASE_KEYS);
@@ -369,6 +395,28 @@ static void region_center(const struct touch_region *region, int *x, int *y)
 	if (!region->circle) { *x += region->width / 2; *y += region->height / 2; }
 }
 
+static int random_between(int minimum, int maximum)
+{
+	return minimum + (maximum > minimum ? rand() % (maximum - minimum + 1) : 0);
+}
+
+static void random_point_in_circle(int center_x, int center_y, int radius, int *x, int *y)
+{
+	int dx, dy;
+
+	if (radius <= 0) {
+		*x = center_x;
+		*y = center_y;
+		return;
+	}
+	do {
+		dx = random_between(-radius, radius);
+		dy = random_between(-radius, radius);
+	} while (dx * dx + dy * dy > radius * radius);
+	*x = center_x + dx;
+	*y = center_y + dy;
+}
+
 static int update_movement(struct bridge *bridge, const struct touch_map *map, struct movement_state *mov)
 {
 	int dir_x = (mov->wasd_d ? 1 : 0) - (mov->wasd_a ? 1 : 0);
@@ -388,49 +436,42 @@ static int update_movement(struct bridge *bridge, const struct touch_map *map, s
 		return 0;
 	}
 
-	int extent = map->movement.circle ? map->movement.radius :
-		     (map->movement.width < map->movement.height ? map->movement.width : map->movement.height) / 2;
-	int limit = extent * map->movement.max_deflection_percent / 100;
-	int target_dx = 0, target_dy = 0;
+	int length = random_between(map->movement.start_radius + 1, map->movement.radius);
+	int target_dx;
+	int target_dy;
 
 	if (dir_x != 0 && dir_y != 0) {
-		/* Combination key: 45 degree diagonal, normalized by 1/sqrt(2) ≈ 70711 / 100000 */
-		target_dx = (int)((int64_t)dir_x * limit * 70711LL / 100000LL);
-		target_dy = (int)((int64_t)dir_y * limit * 70711LL / 100000LL);
+		target_dx = (int)((int64_t)dir_x * length * 70711LL / 100000LL);
+		target_dy = (int)((int64_t)dir_y * length * 70711LL / 100000LL);
 	} else {
-		target_dx = dir_x * limit;
-		target_dy = dir_y * limit;
+		target_dx = dir_x * length;
+		target_dy = dir_y * length;
 	}
 
 	int target_x = cx + target_dx;
 	int target_y = cy + target_dy;
 
 	if (!mov->down) {
-		/* Initial press: contact starts from region center and moves outward to the boundary limit */
+		int start_x;
+		int start_y;
+
+		random_point_in_circle(cx, cy, map->movement.start_radius, &start_x, &start_y);
 		mov->down = true;
-		send_touch(bridge, 0, true, screen_x(map, cx), screen_y(map, cy));
-		usleep(1500);
-		send_touch(bridge, 0, true, screen_x(map, cx + target_dx / 3), screen_y(map, cy + target_dy / 3));
-		usleep(1500);
-		send_touch(bridge, 0, true, screen_x(map, cx + 2 * target_dx / 3), screen_y(map, cy + 2 * target_dy / 3));
-		usleep(1500);
+		mov->cur_x = start_x;
+		mov->cur_y = start_y;
+		send_touch(bridge, 0, true, screen_x(map, start_x), screen_y(map, start_y));
+		usleep((useconds_t)random_between(map->movement.enter_min_delay_us,
+			map->movement.enter_max_delay_us));
 		mov->cur_x = target_x;
 		mov->cur_y = target_y;
 		return send_touch(bridge, 0, true, screen_x(map, target_x), screen_y(map, target_y));
-	} else {
-		/* Already moving: smoothly slide to the new combination target */
-		int from_x = mov->cur_x;
-		int from_y = mov->cur_y;
-		if (from_x != target_x || from_y != target_y) {
-			send_touch(bridge, 0, true, screen_x(map, from_x + (target_x - from_x) / 2),
-						  screen_y(map, from_y + (target_y - from_y) / 2));
-			usleep(1000);
-			mov->cur_x = target_x;
-			mov->cur_y = target_y;
-			return send_touch(bridge, 0, true, screen_x(map, target_x), screen_y(map, target_y));
-		}
 	}
-	return 0;
+
+	usleep((useconds_t)random_between(map->movement.turn_min_delay_us,
+		map->movement.turn_max_delay_us));
+	mov->cur_x = target_x;
+	mov->cur_y = target_y;
+	return send_touch(bridge, 0, true, screen_x(map, target_x), screen_y(map, target_y));
 }
 
 static int release_movement(struct bridge *bridge, const struct touch_map *map, struct movement_state *mov)
