@@ -89,19 +89,31 @@ def get_qt_enum(cls, name):
 
 COLOR_MAP = {
     "movement_joystick": QColor(56, 189, 248),  # Sky Blue
-    "look_joystick": QColor(167, 139, 250),     # Violet
+    "look_touch": QColor(167, 139, 250),        # Violet
+    "look_start_left": QColor(244, 114, 182),
+    "look_start_right": QColor(244, 114, 182),
+    "look_start_up": QColor(244, 114, 182),
+    "look_start_down": QColor(244, 114, 182),
     "key": QColor(251, 146, 60),                # Orange
 }
 
 LABEL_MAP = {
     "movement_joystick": "移动摇杆 (WASD)",
-    "look_joystick": "视角摇杆 (鼠标)",
+    "look_touch": "视角触摸区 T",
+    "look_start_left": "S-Left",
+    "look_start_right": "S-Right",
+    "look_start_up": "S-Up",
+    "look_start_down": "S-Down",
     "key": "按键触点",
 }
 
 ICON_MAP = {
     "movement_joystick": "🎮",
-    "look_joystick": "👁️",
+    "look_touch": "👁️",
+    "look_start_left": "⬅️",
+    "look_start_right": "➡️",
+    "look_start_up": "⬆️",
+    "look_start_down": "⬇️",
     "key": "🎯",
 }
 
@@ -125,7 +137,7 @@ QUICK_KEYS = [
 
 class TouchZone:
     def __init__(self, kind="key", shape="circle", x=0, y=0, radius=50, width=100, height=100,
-                 key="KEY_SPACE", dead_zone_percent=10, max_deflection_percent=100,
+                 key="KEY_SPACE", look_gain=8,
                  random_percent=60, start_radius=30, enter_min_delay_us=800,
                  enter_max_delay_us=2200, turn_min_delay_us=400, turn_max_delay_us=1400,
                  release_movement=False, release_look=False):
@@ -137,8 +149,7 @@ class TouchZone:
         self.width = int(width)
         self.height = int(height)
         self.key = str(key)
-        self.dead_zone_percent = int(dead_zone_percent)
-        self.max_deflection_percent = int(max_deflection_percent)
+        self.look_gain = max(1, min(int(look_gain), 512))
         self.random_percent = int(random_percent)
         self.start_radius = max(0, min(int(start_radius), self.radius - 1)) if self.shape == "circle" else 0
         self.enter_min_delay_us = int(enter_min_delay_us)
@@ -252,8 +263,7 @@ class CanvasWidget(QWidget):
         self.new_kind = "movement_joystick"
         self.new_shape = "circle"
         self.new_key = "BTN_LEFT"
-        self.new_dead_percent = 10
-        self.new_max_percent = 100
+        self.new_look_gain = 8
         self.new_start_radius = 30
         self.new_enter_min_delay_us = 800
         self.new_enter_max_delay_us = 2200
@@ -460,20 +470,6 @@ class CanvasWidget(QWidget):
                 painter.setPen(start_pen)
                 painter.setBrush(get_qt_enum(Qt.BrushStyle if hasattr(Qt, 'BrushStyle') else Qt, 'NoBrush'))
                 painter.drawEllipse(QPointF(cx, cy), start_r, start_r)
-            elif zone.kind == "look_joystick":
-                dead_r = r * zone.dead_zone_percent / 100.0
-                limit_r = r * zone.max_deflection_percent / 100.0
-                if dead_r > 1:
-                    dead_pen = QPen(QColor(255, 255, 255, 110), 1, get_qt_enum(Qt.PenStyle if hasattr(Qt, 'PenStyle') else Qt, 'DashLine'))
-                    painter.setPen(dead_pen)
-                    painter.setBrush(get_qt_enum(Qt.BrushStyle if hasattr(Qt, 'BrushStyle') else Qt, 'NoBrush'))
-                    painter.drawEllipse(QPointF(cx, cy), dead_r, dead_r)
-                if limit_r != r and limit_r > 1:
-                    limit_pen = QPen(color, 1, get_qt_enum(Qt.PenStyle if hasattr(Qt, 'PenStyle') else Qt, 'DotLine'))
-                    painter.setPen(limit_pen)
-                    painter.setBrush(get_qt_enum(Qt.BrushStyle if hasattr(Qt, 'BrushStyle') else Qt, 'NoBrush'))
-                    painter.drawEllipse(QPointF(cx, cy), limit_r, limit_r)
-
             # Center dot
             painter.setPen(get_qt_enum(Qt.PenStyle if hasattr(Qt, 'PenStyle') else Qt, 'NoPen'))
             painter.setBrush(QBrush(color))
@@ -508,6 +504,8 @@ class CanvasWidget(QWidget):
         label_str = LABEL_MAP.get(zone.kind, zone.kind)
         if zone.kind == "movement_joystick":
             label_str = "S · 落点\nE · 方向"
+        elif zone.kind == "look_touch":
+            label_str = "T · 视角触摸区"
         elif zone.kind == "key":
             label_str = f"{zone.key}"
             if zone.release_movement or zone.release_look:
@@ -675,6 +673,12 @@ class CanvasWidget(QWidget):
                 if (final_zone.shape == "circle" and final_zone.radius >= 5) or \
                    (final_zone.shape == "rect" and final_zone.width >= 5 and final_zone.height >= 5):
                     final_zone.clamp_to_screen(self.screen_width, self.screen_height)
+                    unique_kinds = {
+                        "movement_joystick", "look_touch", "look_start_left",
+                        "look_start_right", "look_start_up", "look_start_down",
+                    }
+                    if final_zone.kind in unique_kinds:
+                        self.zones = [zone for zone in self.zones if zone.kind != final_zone.kind]
                     self.zones.append(final_zone)
                     self.selected_index = len(self.zones) - 1
                     self.zone_selected.emit(self.selected_index)
@@ -700,8 +704,7 @@ class CanvasWidget(QWidget):
                 y=int(sy),
                 radius=radius,
                 key=self.new_key,
-                dead_zone_percent=self.new_dead_percent,
-                max_deflection_percent=self.new_max_percent,
+                look_gain=self.new_look_gain,
                 start_radius=self.new_start_radius,
                 enter_min_delay_us=self.new_enter_min_delay_us,
                 enter_max_delay_us=self.new_enter_max_delay_us,
@@ -724,8 +727,7 @@ class CanvasWidget(QWidget):
                 width=width,
                 height=height,
                 key=self.new_key,
-                dead_zone_percent=self.new_dead_percent,
-                max_deflection_percent=self.new_max_percent,
+                look_gain=self.new_look_gain,
                 start_radius=self.new_start_radius,
                 enter_min_delay_us=self.new_enter_min_delay_us,
                 enter_max_delay_us=self.new_enter_max_delay_us,
@@ -796,10 +798,10 @@ class MainWindow(QMainWindow):
 
         side_layout.addWidget(bar_card)
 
-        # 2. Type selection: keep the three creation modes visible in one row.
+        # 2. Type selection: T plus four directional re-entry zones.
         type_card = QFrame()
         type_card.setObjectName("card")
-        type_layout = QHBoxLayout(type_card)
+        type_layout = QGridLayout(type_card)
         type_layout.setContentsMargins(10, 10, 10, 10)
         type_layout.setSpacing(6)
 
@@ -808,7 +810,11 @@ class MainWindow(QMainWindow):
 
         types_meta = [
             ("movement_joystick", "🎮 左摇杆", "WASD 方向控制 · 槽位 0", "#38bdf8"),
-            ("look_joystick", "👁️ 右摇杆", "鼠标滑动视角 · 槽位 1", "#a78bfa"),
+            ("look_touch", "👁️ 视角 T", "鼠标连续拖动区域 · 槽位 1", "#a78bfa"),
+            ("look_start_left", "⬅️ S-Left", "左移从此区随机按下，应放在 T 右侧", "#f472b6"),
+            ("look_start_right", "➡️ S-Right", "右移从此区随机按下，应放在 T 左侧", "#f472b6"),
+            ("look_start_up", "⬆️ S-Up", "上移从此区随机按下，应放在 T 下侧", "#f472b6"),
+            ("look_start_down", "⬇️ S-Down", "下移从此区随机按下，应放在 T 上侧", "#f472b6"),
             ("key", "🎯 按键触点", "射击/技能/跳跃 · 槽位 2", "#fb923c"),
         ]
 
@@ -839,7 +845,7 @@ class MainWindow(QMainWindow):
             if idx == 0:
                 btn.setChecked(True)
             self.btn_group_type.addButton(btn, idx)
-            type_layout.addWidget(btn, 1)
+            type_layout.addWidget(btn, idx // 3, idx % 3)
             self.type_cards.append((btn, kind))
 
         self.btn_group_type.buttonClicked.connect(self.on_type_card_clicked)
@@ -978,28 +984,26 @@ class MainWindow(QMainWindow):
         movement_layout.addWidget(movement_hint, 3, 0, 1, 4)
         param_vbox.addWidget(self.widget_movement_params)
 
-        # Look joystick parameters
+        # Look touch uses the canvas geometry directly: T bounds and four start zones.
         self.widget_look_params = QWidget()
         j_layout = QGridLayout(self.widget_look_params)
         j_layout.setContentsMargins(0, 0, 0, 0)
         j_layout.setHorizontalSpacing(6)
         j_layout.setVerticalSpacing(5)
 
-        j_layout.addWidget(QLabel("死区"), 0, 0)
-        self.spin_dead = QSpinBox()
-        self.spin_dead.setRange(0, 90)
-        self.spin_dead.setSuffix(" %")
-        self.spin_dead.setValue(10)
-        self.spin_dead.valueChanged.connect(self.on_dead_changed)
-        j_layout.addWidget(self.spin_dead, 0, 1)
+        j_layout.addWidget(QLabel("灵敏度"), 0, 0)
+        self.spin_look_gain = QSpinBox()
+        self.spin_look_gain.setRange(1, 512)
+        self.spin_look_gain.setSuffix(" ×")
+        self.spin_look_gain.setValue(8)
+        self.spin_look_gain.setToolTip("每个鼠标相对位移转换为的屏幕触摸像素；数值越小越慢。")
+        self.spin_look_gain.valueChanged.connect(self.on_look_gain_changed)
+        j_layout.addWidget(self.spin_look_gain, 0, 1)
 
-        j_layout.addWidget(QLabel("最大偏移"), 0, 2)
-        self.spin_max = QSpinBox()
-        self.spin_max.setRange(1, 100)
-        self.spin_max.setSuffix(" %")
-        self.spin_max.setValue(100)
-        self.spin_max.valueChanged.connect(self.on_max_changed)
-        j_layout.addWidget(self.spin_max, 0, 3)
+        look_hint = QLabel("先绘制 T，再在 T 内放置四个 S 区。S-Left 放右侧、S-Right 放左侧、S-Up 放下侧、S-Down 放上侧；直接在画布拖拽修改位置和大小。")
+        look_hint.setStyleSheet("color: #94a3b8; font-size: 10px;")
+        look_hint.setWordWrap(True)
+        j_layout.addWidget(look_hint, 1, 0, 1, 4)
         param_vbox.addWidget(self.widget_look_params)
 
         side_layout.addWidget(self.param_card)
@@ -1209,7 +1213,7 @@ class MainWindow(QMainWindow):
                 border-color: #38bdf8;
                 font-weight: bold;
             }
-            QPushButton[typeCard_movement_joystick], QPushButton[typeCard_look_joystick], QPushButton[typeCard_key] {
+            QPushButton[typeCard_movement_joystick], QPushButton[typeCard_look_touch], QPushButton[typeCard_key] {
                 padding: 7px 6px;
                 font-size: 11px;
             }
@@ -1283,7 +1287,8 @@ class MainWindow(QMainWindow):
         is_key = (self.canvas.new_kind == "key")
         self.widget_key_selector.setVisible(is_key)
         self.widget_movement_params.setVisible(self.canvas.new_kind == "movement_joystick")
-        self.widget_look_params.setVisible(self.canvas.new_kind == "look_joystick")
+        self.widget_look_params.setVisible(self.canvas.new_kind == "look_touch" or
+                                           self.canvas.new_kind.startswith("look_start_"))
         self.btn_shape_rect.setEnabled(self.canvas.new_kind != "movement_joystick")
 
     def on_shape_btn_clicked(self, btn):
@@ -1315,12 +1320,8 @@ class MainWindow(QMainWindow):
         self.canvas.new_random_percent = val
         self.apply_to_selected_if_any()
 
-    def on_dead_changed(self, val):
-        self.canvas.new_dead_percent = val
-        self.apply_to_selected_if_any()
-
-    def on_max_changed(self, val):
-        self.canvas.new_max_percent = val
+    def on_look_gain_changed(self, val):
+        self.canvas.new_look_gain = val
         self.apply_to_selected_if_any()
 
     def on_start_radius_changed(self, val):
@@ -1366,9 +1367,8 @@ class MainWindow(QMainWindow):
                 zone.enter_max_delay_us = max(zone.enter_min_delay_us, self.spin_enter_delay_max.value())
                 zone.turn_min_delay_us = self.spin_turn_delay.value()
                 zone.turn_max_delay_us = max(zone.turn_min_delay_us, self.spin_turn_delay_max.value())
-            else:
-                zone.dead_zone_percent = self.spin_dead.value()
-                zone.max_deflection_percent = self.spin_max.value()
+            elif zone.kind == "look_touch":
+                zone.look_gain = self.spin_look_gain.value()
             self.sync_zone_list()
             self.canvas.update()
 
@@ -1444,15 +1444,10 @@ class MainWindow(QMainWindow):
                 self.spin_enter_delay_max.blockSignals(False)
                 self.spin_turn_delay.blockSignals(False)
                 self.spin_turn_delay_max.blockSignals(False)
-            else:
-                self.spin_dead.blockSignals(True)
-                self.spin_max.blockSignals(True)
-
-                self.spin_dead.setValue(zone.dead_zone_percent)
-                self.spin_max.setValue(zone.max_deflection_percent)
-
-                self.spin_dead.blockSignals(False)
-                self.spin_max.blockSignals(False)
+            elif zone.kind == "look_touch":
+                self.spin_look_gain.blockSignals(True)
+                self.spin_look_gain.setValue(zone.look_gain)
+                self.spin_look_gain.blockSignals(False)
 
     def sync_zone_list(self):
         self.zone_list.blockSignals(True)
@@ -1463,8 +1458,12 @@ class MainWindow(QMainWindow):
                 info = f"{icon} 按键: {zone.key} ({zone.shape})"
             elif zone.kind == "movement_joystick":
                 info = f"{icon} 左摇杆 (WASD)"
+            elif zone.kind == "look_touch":
+                info = f"{icon} 右视角触摸区 T"
+            elif zone.kind.startswith("look_start_"):
+                info = f"{icon} {LABEL_MAP[zone.kind]} 起始区"
             else:
-                info = f"{icon} 右视角 (鼠标)"
+                info = f"{icon} {LABEL_MAP.get(zone.kind, zone.kind)}"
 
             item = QListWidgetItem(info)
             item.setToolTip(f"X:{zone.x}, Y:{zone.y}")
@@ -1515,6 +1514,9 @@ class MainWindow(QMainWindow):
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
+            if data.get("version") != 3:
+                raise ValueError("仅支持新版 map.json（version: 3，look_touch + 四个 start 区）")
+
             screen = data.get("screen", {})
             if "width" in screen and "height" in screen:
                 self.spin_width.setValue(screen["width"])
@@ -1544,19 +1546,33 @@ class MainWindow(QMainWindow):
                     turn_max_delay_us=mov["turn_max_delay_us"],
                 ))
 
-            look = data.get("look_joystick")
+            look = data.get("look_touch")
             if look:
                 new_zones.append(TouchZone(
-                    kind="look_joystick",
+                    kind="look_touch",
                     shape=look.get("shape", "circle"),
                     x=look.get("x", 0),
                     y=look.get("y", 0),
                     radius=look.get("radius", 100),
                     width=look.get("width", 100),
                     height=look.get("height", 100),
-                    dead_zone_percent=look.get("dead_zone_percent", 10),
-                    max_deflection_percent=look.get("max_deflection_percent", 100),
+                    look_gain=look.get("gain", 8),
                 ))
+                for direction, kind in [
+                    ("left", "look_start_left"),
+                    ("right", "look_start_right"),
+                    ("up", "look_start_up"),
+                    ("down", "look_start_down"),
+                ]:
+                    start = look.get(f"start_{direction}")
+                    if start:
+                        new_zones.append(TouchZone(
+                            kind=kind,
+                            shape=start.get("shape", "circle"),
+                            x=start.get("x", 0), y=start.get("y", 0),
+                            radius=start.get("radius", 50),
+                            width=start.get("width", 100), height=start.get("height", 100),
+                        ))
 
             keys = data.get("keys", [])
             for k in keys:
@@ -1589,7 +1605,7 @@ class MainWindow(QMainWindow):
             return [x.strip() for x in text.replace("，", ",").split(",") if x.strip()]
 
         data = {
-            "version": 2,
+            "version": 3,
             "screen": {
                 "width": self.spin_width.value(),
                 "height": self.spin_height.value(),
@@ -1597,9 +1613,10 @@ class MainWindow(QMainWindow):
             "release_movement_keys": parse_key_list(self.edit_global_rel_mov.text()),
             "release_look_keys": parse_key_list(self.edit_global_rel_look.text()),
             "movement_joystick": None,
-            "look_joystick": None,
+            "look_touch": None,
             "keys": []
         }
+        look_starts = {}
 
         for zone in self.canvas.zones:
             region = {
@@ -1623,13 +1640,11 @@ class MainWindow(QMainWindow):
                     "turn_max_delay_us": zone.turn_max_delay_us,
                     **region
                 }
-            elif zone.kind == "look_joystick":
-                data["look_joystick"] = {
-                    "slot": 1,
-                    "dead_zone_percent": zone.dead_zone_percent,
-                    "max_deflection_percent": zone.max_deflection_percent,
-                    **region
-                }
+            elif zone.kind == "look_touch":
+                data["look_touch"] = {"slot": 1, "gain": zone.look_gain, **region}
+            elif zone.kind.startswith("look_start_"):
+                direction = zone.kind.removeprefix("look_start_")
+                look_starts[f"start_{direction}"] = region
             elif zone.kind == "key":
                 key_dict = {
                     "slot": 2,
@@ -1642,6 +1657,16 @@ class MainWindow(QMainWindow):
                 if zone.release_look:
                     key_dict["release_look"] = True
                 data["keys"].append(key_dict)
+
+        if data["look_touch"] is not None:
+            required_starts = {"start_left", "start_right", "start_up", "start_down"}
+            if set(look_starts) != required_starts:
+                QMessageBox.warning(self, "视角配置不完整", "视角 T 必须配置 S-Left、S-Right、S-Up、S-Down 四个起始区。")
+                return
+            data["look_touch"].update(look_starts)
+        elif look_starts:
+            QMessageBox.warning(self, "视角配置不完整", "已配置视角起始区，但缺少视角触摸区 T。")
+            return
 
         path, _ = QFileDialog.getSaveFileName(self, "导出 map.json", "map.json", "JSON 文件 (*.json)")
         if path:

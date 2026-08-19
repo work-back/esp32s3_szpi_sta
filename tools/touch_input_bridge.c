@@ -19,11 +19,13 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #define TOUCH_MAX_COORD          32767
 #define MAP_MAX_KEYS             32
 #define MAP_MAX_RELEASE_KEYS     16
+#define LOOK_REPORT_INTERVAL_US  16000ULL
 
 #include "../src/touch_ipc_protocol.h"
 
@@ -46,8 +48,6 @@ struct touch_region {
 	int radius;
 	int start_radius;
 	int random_percent;
-	int dead_zone_percent;
-	int max_deflection_percent;
 	int enter_min_delay_us;
 	int enter_max_delay_us;
 	int turn_min_delay_us;
@@ -69,6 +69,8 @@ struct touch_map {
 	bool has_look;
 	struct touch_region movement;
 	struct touch_region look;
+	struct touch_region look_starts[4];
+	unsigned int look_gain;
 	struct mapped_key keys[MAP_MAX_KEYS];
 	size_t key_count;
 	unsigned int release_movement_keys[MAP_MAX_RELEASE_KEYS];
@@ -89,29 +91,9 @@ struct movement_state {
 
 struct look_state {
 	bool down;
-	int offset_x;
-	int offset_y;
+	int cur_x;
+	int cur_y;
 };
-
-static uint32_t isqrt(uint64_t n)
-{
-	uint64_t root = 0;
-	uint64_t bit = 1ULL << 62;
-
-	while (bit > n) {
-		bit >>= 2;
-	}
-	while (bit != 0) {
-		if (n >= root + bit) {
-			n -= root + bit;
-			root = (root >> 1) + bit;
-		} else {
-			root >>= 1;
-		}
-		bit >>= 2;
-	}
-	return (uint32_t)root;
-}
 
 static void usage(const char *program)
 {
@@ -122,12 +104,12 @@ static void usage(const char *program)
 		"  --keyboard EVENT  keyboard /dev/input/eventN (repeatable)\n"
 		"  --mouse EVENT     mouse /dev/input/eventN (repeatable)\n"
 		"  --slot N          touch slot, default 0\n"
-		"  --gain N          HID units per mouse delta, default 32\n"
+		"  --gain N          HID units per mouse delta; overrides map gain, default 8\n"
 		"  --key-step N      HID units per arrow key, default 1024\n"
 		"\nMappings (no --map): left mouse button or Space/Enter holds touch; mouse movement\n"
 		"and arrow keys move the virtual touch position. Escape exits.\n"
 		"Mappings (--map): WASD controls movement joystick (slot 0); mouse relative move\n"
-		"controls look joystick (slot 1); mapped keys/buttons control slot 2. Escape exits.\n", program);
+		"controls the continuous look touch area (slot 1); mapped keys/buttons control slot 2. Escape exits.\n", program);
 }
 
 static const char *skip_space(const char *text)
@@ -214,14 +196,29 @@ static bool parse_region(const char *object, struct touch_region *region)
 	if (!json_string(object, "shape", shape, sizeof(shape)) || !json_int(object, "x", &region->x) ||
 	    !json_int(object, "y", &region->y)) return false;
 	json_int_default(object, "random_percent", &region->random_percent, 60);
-	json_int_default(object, "dead_zone_percent", &region->dead_zone_percent, 10);
-	json_int_default(object, "max_deflection_percent", &region->max_deflection_percent, 100);
 	region->random_percent = region->random_percent < 0 ? 0 : region->random_percent > 100 ? 100 : region->random_percent;
-	region->dead_zone_percent = region->dead_zone_percent < 0 ? 0 : region->dead_zone_percent > 90 ? 90 : region->dead_zone_percent;
-	region->max_deflection_percent = region->max_deflection_percent < 1 ? 1 : region->max_deflection_percent > 100 ? 100 : region->max_deflection_percent;
 	region->circle = !strcmp(shape, "circle");
 	return region->circle ? json_int(object, "radius", &region->radius) && region->radius > 0 :
 		json_int(object, "width", &region->width) && json_int(object, "height", &region->height) && region->width > 0 && region->height > 0;
+}
+
+static bool parse_look_region(const char *object, struct touch_map *map)
+{
+	static const char *const start_names[4] = {
+		"start_left", "start_right", "start_up", "start_down",
+	};
+	const char *end;
+	int gain;
+
+	if (!parse_region(object, &map->look)) return false;
+	json_int_default(object, "gain", &gain, 8);
+	if (gain < 1 || gain > 512) return false;
+	map->look_gain = (unsigned int)gain;
+	for (size_t i = 0; i < 4; i++) {
+		const char *start = json_named_object(object, start_names[i], &end);
+		if (!start || !parse_region(start, &map->look_starts[i])) return false;
+	}
+	return true;
 }
 
 static bool parse_movement_region(const char *object, struct touch_region *region)
@@ -321,11 +318,11 @@ static bool load_map(const char *path, struct touch_map *map)
 	int version;
 	if (!document) return false;
 	memset(map, 0, sizeof(*map));
-	if (!json_int(document, "version", &version) || version != 2) goto out;
+	if (!json_int(document, "version", &version) || version != 3) goto out;
 	object = json_named_object(document, "screen", &end);
 	if (!object || !json_int(object, "width", &map->width) || !json_int(object, "height", &map->height) || map->width <= 0 || map->height <= 0) goto out;
 	if ((object = json_named_object(document, "movement_joystick", &end))) map->has_movement = parse_movement_region(object, &map->movement);
-	if ((object = json_named_object(document, "look_joystick", &end))) map->has_look = parse_region(object, &map->look);
+	if ((object = json_named_object(document, "look_touch", &end))) map->has_look = parse_look_region(object, map);
 	parse_key_array(document, "release_movement_keys", map->release_movement_keys, &map->release_movement_count, MAP_MAX_RELEASE_KEYS);
 	parse_key_array(document, "release_look_keys", map->release_look_keys, &map->release_look_count, MAP_MAX_RELEASE_KEYS);
 	const char *array = json_value(document, "keys");
@@ -398,6 +395,14 @@ static void region_center(const struct touch_region *region, int *x, int *y)
 static int random_between(int minimum, int maximum)
 {
 	return minimum + (maximum > minimum ? rand() % (maximum - minimum + 1) : 0);
+}
+
+static uint64_t monotonic_time_us(void)
+{
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (uint64_t)now.tv_sec * 1000000ULL + (uint64_t)now.tv_nsec / 1000ULL;
 }
 
 static void random_point_in_circle(int center_x, int center_y, int radius, int *x, int *y)
@@ -491,53 +496,113 @@ static int release_movement(struct bridge *bridge, const struct touch_map *map, 
 	return 0;
 }
 
+enum look_direction {
+	LOOK_LEFT,
+	LOOK_RIGHT,
+	LOOK_UP,
+	LOOK_DOWN,
+};
+
+static bool point_in_region(const struct touch_region *region, int x, int y)
+{
+	if (region->circle) {
+		int64_t dx = x - region->x;
+		int64_t dy = y - region->y;
+		return dx * dx + dy * dy <= (int64_t)region->radius * region->radius;
+	}
+	return x >= region->x && x <= region->x + region->width &&
+		y >= region->y && y <= region->y + region->height;
+}
+
+static enum look_direction look_direction_for_delta(int dx, int dy)
+{
+	if (abs(dx) >= abs(dy)) return dx < 0 ? LOOK_LEFT : LOOK_RIGHT;
+	return dy < 0 ? LOOK_UP : LOOK_DOWN;
+}
+
+static void random_point_in_region(const struct touch_region *region, int *x, int *y)
+{
+	if (region->circle) {
+		random_point_in_circle(region->x, region->y, region->radius, x, y);
+	} else {
+		*x = random_between(region->x, region->x + region->width);
+		*y = random_between(region->y, region->y + region->height);
+	}
+}
+
+static void random_look_start(const struct touch_map *map, enum look_direction direction,
+			      int *x, int *y)
+{
+	/* 起始区应配置在 T 内；容错时退回 T 的中心，避免从区域外按下。 */
+	for (int attempt = 0; attempt < 64; attempt++) {
+		random_point_in_region(&map->look_starts[direction], x, y);
+		if (point_in_region(&map->look, *x, *y)) return;
+	}
+	region_center(&map->look, x, y);
+}
+
+static void limit_look_segment(const struct touch_region *region, int start_x, int start_y,
+			       int target_x, int target_y, int *end_x, int *end_y)
+{
+	int64_t dx = target_x - start_x;
+	int64_t dy = target_y - start_y;
+	int64_t low = 0;
+	int64_t high = 1LL << 20;
+
+	/* 二分求线段与 T 边界的交点，圆形、矩形区域共用同一套逻辑。 */
+	for (int i = 0; i < 24; i++) {
+		int64_t middle = (low + high + 1) / 2;
+		int x = start_x + (int)(dx * middle / (1LL << 20));
+		int y = start_y + (int)(dy * middle / (1LL << 20));
+		if (point_in_region(region, x, y)) low = middle;
+		else high = middle - 1;
+	}
+	*end_x = start_x + (int)(dx * low / (1LL << 20));
+	*end_y = start_y + (int)(dy * low / (1LL << 20));
+}
+
 static int update_look(struct bridge *bridge, const struct touch_map *map,
 		       struct look_state *look, int dx, int dy)
 {
-	int cx, cy;
-	region_center(&map->look, &cx, &cy);
-	int extent = map->look.circle ? map->look.radius :
-		     (map->look.width < map->look.height ? map->look.width : map->look.height) / 2;
-	int limit = extent * map->look.max_deflection_percent / 100;
-	int dead = extent * map->look.dead_zone_percent / 100;
+	int remaining_x = dx;
+	int remaining_y = dy;
 
-	look->offset_x += dx;
-	look->offset_y += dy;
+	/* 鼠标位移直接映射为 T 内的连续拖动，不累计偏移，也不依赖空闲超时。 */
+	for (int segment = 0; segment < 32 && (remaining_x || remaining_y); segment++) {
+		if (!look->down) {
+			random_look_start(map, look_direction_for_delta(remaining_x, remaining_y),
+					  &look->cur_x, &look->cur_y);
+			look->down = true;
+			send_touch(bridge, 1, true, screen_x(map, look->cur_x), screen_y(map, look->cur_y));
+		}
 
-	uint64_t dist_sq = (int64_t)look->offset_x * look->offset_x + (int64_t)look->offset_y * look->offset_y;
-	uint32_t dist = isqrt(dist_sq);
-	int cur_dx = look->offset_x;
-	int cur_dy = look->offset_y;
+		int target_x = look->cur_x + remaining_x;
+		int target_y = look->cur_y + remaining_y;
+		if (point_in_region(&map->look, target_x, target_y)) {
+			look->cur_x = target_x;
+			look->cur_y = target_y;
+			return send_touch(bridge, 1, true, screen_x(map, target_x), screen_y(map, target_y));
+		}
 
-	if (dist > (uint32_t)limit && dist > 0) {
-		cur_dx = (int)((int64_t)look->offset_x * limit / dist);
-		cur_dy = (int)((int64_t)look->offset_y * limit / dist);
+		int edge_x, edge_y;
+		limit_look_segment(&map->look, look->cur_x, look->cur_y, target_x, target_y,
+				   &edge_x, &edge_y);
+		remaining_x = target_x - edge_x;
+		remaining_y = target_y - edge_y;
+		look->cur_x = edge_x;
+		look->cur_y = edge_y;
+		send_touch(bridge, 1, true, screen_x(map, edge_x), screen_y(map, edge_y));
+		send_touch(bridge, 1, false, screen_x(map, edge_x), screen_y(map, edge_y));
+		look->down = false;
 	}
-
-	if (!look->down) {
-		look->down = true;
-		send_touch(bridge, 1, true, screen_x(map, cx), screen_y(map, cy));
-	}
-
-	if (dist <= (uint32_t)dead) {
-		cur_dx = 0;
-		cur_dy = 0;
-	}
-
-	return send_touch(bridge, 1, true, screen_x(map, cx + cur_dx), screen_y(map, cy + cur_dy));
+	return 0;
 }
 
 static int release_look(struct bridge *bridge, const struct touch_map *map, struct look_state *look)
 {
 	if (look->down) {
-		int cx, cy;
-		region_center(&map->look, &cx, &cy);
-		int last_x = cx + look->offset_x;
-		int last_y = cy + look->offset_y;
 		look->down = false;
-		look->offset_x = 0;
-		look->offset_y = 0;
-		return send_touch(bridge, 1, false, screen_x(map, last_x), screen_y(map, last_y));
+		return send_touch(bridge, 1, false, screen_x(map, look->cur_x), screen_y(map, look->cur_y));
 	}
 	return 0;
 }
@@ -605,14 +670,17 @@ int main(int argc, char **argv)
 {
 	struct pollfd fds[32];
 	struct bridge bridge = { .x = TOUCH_MAX_COORD / 2,
-		.y = TOUCH_MAX_COORD / 2, .gain = 32, .key_step = 1024 };
+		.y = TOUCH_MAX_COORD / 2, .gain = 8, .key_step = 1024 };
 	const char *shm_name = TOUCH_IPC_SHM_NAME;
 	const char *map_path = NULL;
 	struct touch_map map;
 	struct movement_state mov = { 0 };
 	struct look_state look = { 0 };
 	int last_key_x = 0, last_key_y = 0;
+	int look_pending_x = 0, look_pending_y = 0;
+	uint64_t last_look_report_us = 0;
 	int fd_count = 0;
+	bool gain_given = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--shm") && ++i < argc) {
@@ -632,6 +700,7 @@ int main(int argc, char **argv)
 			bridge.slot = (uint8_t)strtoul(argv[i], NULL, 0);
 		} else if (!strcmp(argv[i], "--gain") && ++i < argc) {
 			bridge.gain = strtoul(argv[i], NULL, 0);
+			gain_given = true;
 		} else if (!strcmp(argv[i], "--key-step") && ++i < argc) {
 			bridge.key_step = strtoul(argv[i], NULL, 0);
 		} else {
@@ -647,6 +716,9 @@ int main(int argc, char **argv)
 	if (map_path && !load_map(map_path, &map)) {
 		fprintf(stderr, "Unable to load map file: %s\n", map_path);
 		return EXIT_FAILURE;
+	}
+	if (map_path && map.has_look && !gain_given) {
+		bridge.gain = map.look_gain;
 	}
 	if (map_path) {
 		fprintf(stderr, "Loaded %s: movement=%d look=%d keys=%zu rel_mov=%zu rel_look=%zu\n",
@@ -674,26 +746,12 @@ int main(int argc, char **argv)
 	}
 
 	for (;;) {
-		int poll_timeout = (map_path && map.has_look && look.down) ? 25 : -1;
-		int poll_res = poll(fds, (nfds_t)fd_count, poll_timeout);
+		int poll_res = poll(fds, (nfds_t)fd_count, -1);
 		if (poll_res < 0) {
 			if (errno == EINTR) continue;
 			perror("poll");
 			return EXIT_FAILURE;
 		}
-		if (poll_res == 0) {
-			/* Timeout with no mouse movement: release look touch */
-			if (map_path && map.has_look) {
-				int ret = release_look(&bridge, &map, &look);
-				if (ret < 0) {
-					errno = -ret;
-					perror("touch IPC write");
-					return EXIT_FAILURE;
-				}
-			}
-			continue;
-		}
-
 		for (int i = 0; i < fd_count; i++) {
 			struct input_event event;
 			if (!(fds[i].revents & POLLIN)) continue;
@@ -707,10 +765,23 @@ int main(int argc, char **argv)
 				}
 			} else {
 				if (event.type == EV_REL && map.has_look) {
-					int dx = (event.code == REL_X) ? event.value * (int)bridge.gain : 0;
-					int dy = (event.code == REL_Y) ? event.value * (int)bridge.gain : 0;
-					if (dx != 0 || dy != 0) {
-						ret = update_look(&bridge, &map, &look, dx, dy);
+					/* 一个鼠标包通常分别携带 REL_X、REL_Y；先合并，避免两次触摸报告。 */
+					if (event.code == REL_X) look_pending_x += event.value * (int)bridge.gain;
+					if (event.code == REL_Y) look_pending_y += event.value * (int)bridge.gain;
+				} else if (event.type == EV_SYN && event.code == SYN_REPORT && map.has_look) {
+					uint64_t now = monotonic_time_us();
+
+					/*
+					 * BLE 不能可靠消费鼠标的 500/1000 Hz 原始事件。
+					 * 保留累计位移，但最多约 60 Hz 发出一次连续拖动，防止曲线
+					 * 或画圈时大量报告堆积成明显延迟。
+					 */
+					if ((look_pending_x || look_pending_y) &&
+					    (!look.down || now - last_look_report_us >= LOOK_REPORT_INTERVAL_US)) {
+						ret = update_look(&bridge, &map, &look, look_pending_x, look_pending_y);
+						look_pending_x = 0;
+						look_pending_y = 0;
+						last_look_report_us = now;
 					}
 				} else if (event.type == EV_KEY) {
 					if (event.code == KEY_ESC && event.value == 1) return EXIT_SUCCESS;
@@ -744,6 +815,8 @@ int main(int argc, char **argv)
 						}
 						if (trigger_rel_look && map.has_look) {
 							ret = release_look(&bridge, &map, &look);
+							look_pending_x = 0;
+							look_pending_y = 0;
 						}
 					}
 

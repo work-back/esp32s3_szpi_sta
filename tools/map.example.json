@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "screen": {
     "width": 2400,
     "height": 1080
@@ -18,14 +18,42 @@
     "turn_min_delay_us": 400,
     "turn_max_delay_us": 1400
   },
-  "look_joystick": {
+  "look_touch": {
     "slot": 1,
-    "shape": "circle",
-    "x": 2000,
-    "y": 750,
-    "radius": 150,
-    "dead_zone_percent": 10,
-    "max_deflection_percent": 100
+    "gain": 8,
+    "shape": "rect",
+    "x": 1700,
+    "y": 550,
+    "width": 600,
+    "height": 400,
+    "start_left": {
+      "shape": "rect",
+      "x": 2150,
+      "y": 650,
+      "width": 100,
+      "height": 200
+    },
+    "start_right": {
+      "shape": "rect",
+      "x": 1750,
+      "y": 650,
+      "width": 100,
+      "height": 200
+    },
+    "start_up": {
+      "shape": "rect",
+      "x": 1900,
+      "y": 800,
+      "width": 200,
+      "height": 100
+    },
+    "start_down": {
+      "shape": "rect",
+      "x": 1900,
+      "y": 600,
+      "width": 200,
+      "height": 100
+    }
   },
   "keys": [
     {
