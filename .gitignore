@@ -2,3 +2,7 @@ cscope.in.out
 cscope.out
 tags
 cscope.po.out
+__pycache__/
+*.pyc
+.venv/
+ui/.venv/
