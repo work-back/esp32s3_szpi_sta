@@ -245,6 +245,13 @@ static bool parse_movement_region(const char *object, struct touch_region *regio
 
 static unsigned int key_code(const char *name)
 {
+	static const unsigned int letter_codes[26] = {
+		KEY_A, KEY_B, KEY_C, KEY_D, KEY_E, KEY_F, KEY_G,
+		KEY_H, KEY_I, KEY_J, KEY_K, KEY_L, KEY_M, KEY_N,
+		KEY_O, KEY_P, KEY_Q, KEY_R, KEY_S, KEY_T, KEY_U,
+		KEY_V, KEY_W, KEY_X, KEY_Y, KEY_Z,
+	};
+
 	if (!strcmp(name, "BTN_LEFT")) return BTN_LEFT;
 	if (!strcmp(name, "BTN_RIGHT")) return BTN_RIGHT;
 	if (!strcmp(name, "BTN_MIDDLE")) return BTN_MIDDLE;
@@ -270,20 +277,29 @@ static unsigned int key_code(const char *name)
 		if (!name[6]) return KEY_F1 + (name[5] - '1');
 		if (name[5] == '1' && name[6] >= '0' && name[6] <= '2' && !name[7]) return KEY_F10 + (name[6] - '0');
 	}
-	if (!strncmp(name, "KEY_", 4) && name[4] && !name[5] && name[4] >= 'A' && name[4] <= 'Z') return KEY_A + name[4] - 'A';
-	if (!strncmp(name, "KEY_", 4) && name[4] >= '0' && name[4] <= '9' && !name[5]) return KEY_0 + name[4] - '0';
+	if (!strncmp(name, "KEY_", 4) && name[4] >= 'A' && name[4] <= 'Z' && !name[5]) {
+		/* evdev 字母码遵循 QWERTY 物理键位，不是 A 至 Z 的连续数值。 */
+		return letter_codes[name[4] - 'A'];
+	}
+	if (!strncmp(name, "KEY_", 4) && name[4] >= '1' && name[4] <= '9' && !name[5]) {
+		return KEY_1 + name[4] - '1';
+	}
+	if (!strcmp(name, "KEY_0")) return KEY_0;
 	return 0;
 }
 
 static void parse_key_array(const char *document, const char *name, unsigned int *keys, size_t *count, size_t max_count)
 {
 	const char *array = json_value(document, name);
+	const char *array_end;
 	*count = 0;
 	if (!array || *array != '[') return;
-	for (const char *p = array + 1; (p = strchr(p, '"')) && *count < max_count;) {
+	array_end = strchr(array, ']');
+	if (!array_end) return;
+	for (const char *p = array + 1; (p = strchr(p, '"')) && p < array_end && *count < max_count;) {
 		p++;
 		const char *end = strchr(p, '"');
-		if (!end) break;
+		if (!end || end >= array_end) break;
 		char key_name[32];
 		size_t len = (size_t)(end - p);
 		if (len < sizeof(key_name)) {
