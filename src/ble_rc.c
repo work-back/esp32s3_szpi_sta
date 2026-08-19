@@ -84,7 +84,7 @@ static const uint8_t report_map[] = {
 };
 
 static struct touch_report touch_report;
-/* Logical slots retain their Contact IDs; HID reports pack active contacts first. */
+/* Logical slots retain their Contact IDs. */
 static struct touch_contact touch_state[TOUCH_CONTACTS];
 static bool notifications_enabled;
 static uint8_t control_point;
@@ -228,6 +228,7 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 int touch_hid_send(uint8_t slot, bool down, uint16_t x, uint16_t y)
 {
 	struct touch_contact *contact;
+	size_t report_contacts = 0;
 	int err;
 
 	if (slot >= TOUCH_CONTACTS || x > 32767 || y > 32767) {
@@ -246,12 +247,15 @@ int touch_hid_send(uint8_t slot, bool down, uint16_t x, uint16_t y)
 	 * logical slot number: an isolated slot 2 contact has to be record 0.
 	 */
 	memset(&touch_report, 0, sizeof(touch_report));
-	touch_report.contact_count = 0;
+	if (!down) {
+		touch_report.contact[report_contacts++] = *contact;
+	}
 	for (size_t i = 0; i < TOUCH_CONTACTS; i++) {
 		if (touch_state[i].flags & BIT(0)) {
-			touch_report.contact[touch_report.contact_count++] = touch_state[i];
+			touch_report.contact[report_contacts++] = touch_state[i];
 		}
 	}
+	touch_report.contact_count = report_contacts;
 
 	if (active_conn == NULL || !notifications_enabled) {
 		return -ENOTCONN;

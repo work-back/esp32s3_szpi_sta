@@ -35,11 +35,11 @@ static void touch_ipc_thread(void *arg1, void *arg2, void *arg3)
 			bool down = mailbox->queue[index].down != 0;
 			uint16_t x = mailbox->queue[index].x;
 			uint16_t y = mailbox->queue[index].y;
+			int err = touch_hid_send(slot, down, x, y);
 
 			tail++;
 			__atomic_store_n(&mailbox->tail, tail, __ATOMIC_RELEASE);
 
-			int err = touch_hid_send(slot, down, x, y);
 			if (err != 0 && err != -ENOTCONN) {
 				LOG_WRN("Touch frame was not sent: %d", err);
 			}
